@@ -1,0 +1,5 @@
+{
+  "id": "sample.b",
+  "version": "1.0.0",
+  "loadAfter": [ "sample.a" ]
+}

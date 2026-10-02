@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <MystiaRepoRoot>$(MSBuildThisFileDirectory)</MystiaRepoRoot>
+    <MystiaInteropDir>$(MystiaRepoRoot)artifacts\interop\</MystiaInteropDir>
+  </PropertyGroup>
+</Project>

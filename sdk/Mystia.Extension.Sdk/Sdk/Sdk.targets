@@ -1,0 +1,19 @@
+<Project>
+  <ItemGroup>
+    <Reference Include="Mystia.Net.Sdk">
+      <HintPath>$(MSBuildThisFileDirectory)..\lib\net10.0\Mystia.Net.Sdk.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Analyzer Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\Mystia.Net.Sdk.SourceGenerators.dll" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(MystiaInteropDir)' != ''">
+    <MystiaInteropAssembly Include="$(MystiaInteropDir)*.dll" />
+    <Reference Include="@(MystiaInteropAssembly)">
+      <HintPath>%(Identity)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

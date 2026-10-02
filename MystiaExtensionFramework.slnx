@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/sdk/" />
+  <Folder Name="/sdk/Mystia.Extension.Sdk/">
+    <Project Path="sdk/Mystia.Extension.Sdk/Mystia.Extension.Sdk.Pack.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Mystia.InteropGen/Mystia.InteropGen.csproj" />
+    <Project Path="src/Mystia.Modding.Bridge/Mystia.Modding.Bridge.csproj" />
+    <Project Path="src/Mystia.Modding.Host/Mystia.Modding.Host.csproj" />
+    <Project Path="src/Mystia.Net.Sdk.SourceGenerators/Mystia.Net.Sdk.SourceGenerators.csproj" />
+    <Project Path="src/Mystia.Net.Sdk.Tests/Mystia.Net.Sdk.Tests.csproj" />
+    <Project Path="src/Mystia.Net.Sdk/Mystia.Net.Sdk.csproj" />
+    <Project Path="src/Mystia.Syringe/Mystia.Syringe.csproj" />
+  </Folder>
+</Solution>

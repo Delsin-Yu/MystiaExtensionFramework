@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Mystia</RootNamespace>
+    <AssemblyName>Mystia.Net.Sdk</AssemblyName>
+    <Description>Public contract for Mystia community extensions.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Mystia.Modding.Bridge</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Mystia.Modding.Host</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Mystia.Net.Sdk.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="GameApi\**\*.cs" />
+    <Compile Include="GameApi\**\*.cs" Condition="Exists('$(MystiaInteropDir)Assembly-CSharp.dll')" />
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('$(MystiaInteropDir)Assembly-CSharp.dll')">
+    <MystiaInteropDll Include="$(MystiaInteropDir)*.dll" />
+    <Reference Include="@(MystiaInteropDll)">
+      <HintPath>%(FullPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

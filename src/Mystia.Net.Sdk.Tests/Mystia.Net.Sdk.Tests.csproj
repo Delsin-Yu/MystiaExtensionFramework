@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Mystia.Net.Sdk\Mystia.Net.Sdk.csproj" />
+    <ProjectReference Include="..\Mystia.Net.Sdk.SourceGenerators\Mystia.Net.Sdk.SourceGenerators.csproj" />
+    <ProjectReference Include="..\Mystia.Modding.Bridge\Mystia.Modding.Bridge.csproj" />
+    <ProjectReference Include="..\Mystia.Modding.Host\Mystia.Modding.Host.csproj" />
+    <ProjectReference Include="..\Mystia.Syringe\Mystia.Syringe.csproj" />
+    <ProjectReference Include="..\Mystia.CatalogGen\Mystia.CatalogGen.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="Exists('$(MystiaInteropDir)Assembly-CSharp.dll')">
+    <MystiaInteropDll Include="$(MystiaInteropDir)*.dll" />
+    <Reference Include="@(MystiaInteropDll)">
+      <HintPath>%(FullPath)</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

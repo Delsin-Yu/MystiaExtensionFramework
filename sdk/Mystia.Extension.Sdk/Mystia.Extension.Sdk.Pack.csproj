@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IsPackable>true</IsPackable>
+    <NuspecFile>$(MSBuildProjectDirectory)\Mystia.Extension.Sdk.nuspec</NuspecFile>
+    <PackageOutputPath>$(MystiaRepoRoot)artifacts\nuget\</PackageOutputPath>
+    <NoWarn>$(NoWarn);NU5100;NU5128</NoWarn>
+    <SdkAssembly>$(MystiaRepoRoot)src\Mystia.Net.Sdk\bin\$(Configuration)\net10.0\Mystia.Net.Sdk.dll</SdkAssembly>
+    <GeneratorAssembly>$(MystiaRepoRoot)src\Mystia.Net.Sdk.SourceGenerators\bin\$(Configuration)\netstandard2.0\Mystia.Net.Sdk.SourceGenerators.dll</GeneratorAssembly>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Mystia.Net.Sdk\Mystia.Net.Sdk.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\Mystia.Net.Sdk.SourceGenerators\Mystia.Net.Sdk.SourceGenerators.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <Target Name="AssignNuspecProperties" BeforeTargets="GenerateNuspec">
+    <PropertyGroup>
+      <NuspecProperties>SdkDll=$(SdkAssembly);GeneratorDll=$(GeneratorAssembly)</NuspecProperties>
+    </PropertyGroup>
+  </Target>
+</Project>

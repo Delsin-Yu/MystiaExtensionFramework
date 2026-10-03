@@ -37,6 +37,10 @@ public sealed class EntityProxyTests
 
         public int ExtraFundByBuff => 5;
 
+        public float EnduranceLimit => 100f;
+
+        public IReadOnlyList<OrderProxy> Orders => [];
+
         public GuestLeaveType FinalLeaveType => GuestLeaveType.Fading;
 
         public bool HasEvaluated { get; private set; }

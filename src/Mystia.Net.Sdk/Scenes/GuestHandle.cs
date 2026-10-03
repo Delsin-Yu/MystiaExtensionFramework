@@ -142,6 +142,12 @@ internal interface IGuestEntity
 
     int ExtraFundByBuff { get; }
 
+    /// <summary>The endurance limit the game prices an order that outgrows the fund by.</summary>
+    float EnduranceLimit { get; }
+
+    /// <summary>Every order the group still holds, newest first (the game's own stack order).</summary>
+    IReadOnlyList<OrderProxy> Orders { get; }
+
     GuestLeaveType FinalLeaveType { get; }
 
     /// <summary>Whether the group already received a verdict for its current order.</summary>
@@ -221,6 +227,12 @@ public sealed class GuestProxy
 
     /// <summary>The extra fund a buff gave the group.</summary>
     public int ExtraFundByBuff => _entity.ExtraFundByBuff;
+
+    /// <summary>The endurance limit the game prices an order that outgrows the fund by.</summary>
+    public float EnduranceLimit => _entity.EnduranceLimit;
+
+    /// <summary>Every order the group still holds, newest first; the pending one is <see cref="Orders"/>[0].</summary>
+    public IReadOnlyList<OrderProxy> Orders => _entity.Orders;
 
     /// <summary>The leave type the game will settle the group with.</summary>
     public GuestLeaveType FinalLeaveType => _entity.FinalLeaveType;

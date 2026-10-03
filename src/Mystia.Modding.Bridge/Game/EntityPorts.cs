@@ -57,6 +57,27 @@ internal sealed class UnityGuestEntity : IGuestEntity
 
     public int ExtraFundByBuff => _group.ExtraFundByBuff;
 
+    public float EnduranceLimit => _group.EnduranceLimit;
+
+    public IReadOnlyList<OrderProxy> Orders
+    {
+        get
+        {
+            // Stack order, so the first entry is the order the group is considering right now: the same read
+            // the mod makes when it sums what an order session already spent (Managers/GuestFSM.cs:547).
+            // The enumerable has no usable enumerator in this build, so it is materialised first.
+            var orders = _group.AllOrders.ToArray();
+            var proxies = new List<OrderProxy>(orders.Length);
+            foreach (var order in orders)
+            {
+                if (OrderDirectory.ProxyOf(order) is { } proxy)
+                    proxies.Add(proxy);
+            }
+
+            return proxies;
+        }
+    }
+
     public GuestLeaveType FinalLeaveType => Mirrors.ToSdk(_group.FinalLeaveType);
 
     public bool HasEvaluated => _group.HasEvaluated;

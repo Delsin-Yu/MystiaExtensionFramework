@@ -21,18 +21,27 @@ public static class Program
         var passthroughNames = args.Contains("--passthrough", StringComparer.OrdinalIgnoreCase);
         var positional = args.Where(arg => !arg.StartsWith("--", StringComparison.Ordinal)).ToArray();
 
+        // The managed backup exists in several flavours per machine: an IL2CPP build writes a stripped copy next
+        // to the build output, while a Symbols build keeps a fuller one. The flavour decides whether members
+        // such as ResourceProviderBase.Release exist in the interop, so the choice must not depend on which
+        // directory the recursive search happens to reach first. --managed picks one explicitly.
+        var explicitManaged = ArgumentValue(args, "--managed");
+        var symbolsOnly = args.Contains("--symbols-backup", StringComparer.OrdinalIgnoreCase);
+
         if (positional.Length < 2 || string.IsNullOrWhiteSpace(positional[0]) || string.IsNullOrWhiteSpace(positional[1]))
         {
-            Console.Error.WriteLine("Usage: Mystia.InteropGen <game-project-dir> <game-install-dir> [output-dir] [unity-libs-dir] [--passthrough]");
+            Console.Error.WriteLine("Usage: Mystia.InteropGen <game-project-dir> <game-install-dir> [output-dir] [unity-libs-dir] [--managed <dir>] [--symbols-backup] [--passthrough]");
             Console.Error.WriteLine("The project directory must contain a Build folder holding a Managed backup, such as");
             Console.Error.WriteLine("Build\\Symbols\\...\\Managed or Build\\<game>_BackUpThisFolder_ButDontShipItWithYourGame\\Managed.");
             Console.Error.WriteLine("The install directory must contain GameAssembly.dll and global-metadata.dat.");
+            Console.Error.WriteLine("--managed takes the Managed directory verbatim (a full one is preferred over a stripped copy).");
+            Console.Error.WriteLine("--symbols-backup requires the chosen backup to live under a Symbols folder.");
             Console.Error.WriteLine("--passthrough keeps the source names verbatim, which no C# source can reference.");
             return 1;
         }
 
         var repo = FindRepoRoot();
-        var managed = FindManaged(positional[0]);
+        var managed = string.IsNullOrWhiteSpace(explicitManaged) ? FindManaged(positional[0], symbolsOnly) : explicitManaged;
         var gameAssembly = Path.Combine(positional[1], "GameAssembly.dll");
         var metadata = FindMetadata(positional[1]);
         var output = positional.ElementAtOrDefault(2) ?? Path.Combine(repo, "artifacts", "interop");
@@ -42,6 +51,8 @@ public static class Program
             Console.Error.WriteLine("Managed backup was not found under " + positional[0]);
             return 1;
         }
+
+        ReportBackup(managed);
 
         var unityLibs = FindUnityLibs(positional.ElementAtOrDefault(3), managed);
 
@@ -220,14 +231,49 @@ public static class Program
         }
     }
 
-    private static string FindManaged(string projectDir)
+    // A build writes its stripped managed copy under the build output and keeps a fuller one under Symbols.
+    // Both are called "Managed", so the search prefers the Symbols flavour and only falls back to the others
+    // (and says what it picked) instead of taking whatever the enumeration reaches first.
+    private static string FindManaged(string projectDir, bool symbolsOnly)
     {
         var build = Path.Combine(projectDir, "Build");
         if (!Directory.Exists(build))
             return "";
 
-        return Directory.EnumerateDirectories(build, "Managed", SearchOption.AllDirectories)
-            .FirstOrDefault(dir => File.Exists(Path.Combine(dir, "Assembly-CSharp.dll"))) ?? "";
+        var candidates = Directory.EnumerateDirectories(build, "Managed", SearchOption.AllDirectories)
+            .Where(dir => File.Exists(Path.Combine(dir, "Assembly-CSharp.dll")))
+            .OrderBy(dir => dir, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var symbols = candidates.FirstOrDefault(dir => dir.Contains("Symbols", StringComparison.OrdinalIgnoreCase));
+        if (symbolsOnly)
+            return symbols ?? "";
+
+        if (symbols is not null)
+            return symbols;
+
+        if (candidates.Length > 1)
+        {
+            Console.Error.WriteLine($"Several managed backups were found; using '{candidates[0]}'.");
+            Console.Error.WriteLine("Pass --managed <dir> to pick one, or --symbols-backup to require a Symbols backup.");
+        }
+
+        return candidates.FirstOrDefault() ?? "";
+    }
+
+    // The chosen backup decides whether members such as ResourceProviderBase.Release exist in the interop, so it
+    // is printed rather than left to be dug out of the manifest. A stripped backup is a common cause of a bridge
+    // that will not compile; the way out is --managed <game project>\\Library\\ScriptAssemblies, which holds the
+    // unstripped build output. (Neither flavour is authoritative for what the player can resolve at run time:
+    // that is the pinned global-metadata.dat, and a member the shipped metadata lacks must never be called.)
+    private static void ReportBackup(string managed)
+    {
+        Console.WriteLine($"Managed backup: {managed}");
+        if (!managed.Contains("Symbols", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine("Note: this backup is not the Symbols flavour. If a bridge member fails to override");
+            Console.Error.WriteLine("(ResourceProviderBase.Release is the usual one), pass --managed <game-project>\\Library\\ScriptAssemblies.");
+        }
     }
 
     // The IL2CPP managed backup carries Unity's own assemblies next to the game assemblies,
@@ -250,6 +296,17 @@ public static class Program
             return null;
         return Directory.EnumerateFiles(installDir, "global-metadata.dat", SearchOption.AllDirectories)
             .FirstOrDefault();
+    }
+
+    private static string? ArgumentValue(string[] args, string name)
+    {
+        for (var index = 0; index < args.Length - 1; index++)
+        {
+            if (string.Equals(args[index], name, StringComparison.OrdinalIgnoreCase))
+                return args[index + 1];
+        }
+
+        return null;
     }
 
     private static string FindRepoRoot()

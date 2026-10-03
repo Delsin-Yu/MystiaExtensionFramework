@@ -12,9 +12,10 @@ namespace Mystia.Assets;
 // this through is valid from any thread, but the object it produces is not, so a background thread hops
 // first with MainThread.
 /// <summary>
-/// Builds the assets a mod draws, plays or files into the game's own asset pipeline. A mod hands over data it
-/// carries — encoded image bytes, decoded audio samples, colours — and receives an opaque handle; no engine
-/// object is ever named here, which is why a mod cannot build one behind the framework's back.
+/// Builds the assets a mod draws, plays, wears or files into the game's own asset pipeline. A mod hands over
+/// data it carries — encoded image bytes, decoded audio samples, colours, sprites it already cut — and receives
+/// an opaque handle; no engine object is ever named here, which is why a mod cannot build one behind the
+/// framework's back.
 /// <para>
 /// Every member creates an engine object, so every member is main thread only: from a background thread hop
 /// with <c>ICommonServices.MainThread</c> first. Nothing here throws over data a mod got wrong — bad input is
@@ -54,6 +55,56 @@ public interface IAssetFactory
         Vector2 pivot,
         float pixelsPerUnit,
         [NotNullWhen(true)] out SpriteHandle? sprite);
+
+    /// <summary>
+    /// Reports the pixel size of a texture, which is what a mod needs when the layout of a sprite sheet decides
+    /// what the sheet is: a mod that cuts a skin into frames reads the size before it can cut anything.
+    /// <para>
+    /// The engine is asked, never a header the framework could guess at: what a mod hands in may be a texture
+    /// the factory decoded, the engine's own white texture, or a texture the game handed it.
+    /// </para>
+    /// </summary>
+    /// <param name="texture">A texture this factory produced, or the engine's own white texture.</param>
+    /// <param name="width">The width in pixels; zero when the texture was refused.</param>
+    /// <param name="height">The height in pixels; zero when the texture was refused.</param>
+    /// <returns>False when the handle is not a texture this framework built.</returns>
+    bool TryGetTextureSize(TextureHandle texture, out int width, out int height);
+
+    /// <summary>
+    /// Reads a texture's pixels back into a buffer a mod can inspect, the counterpart of
+    /// <see cref="TryCreatePixelTexture"/>: cutting one texture into another means reading the source first.
+    /// <para>
+    /// The buffer holds copies on the CPU, laid out the way the engine lays a texture out — the origin is the
+    /// bottom left corner and y grows upwards — and it uploads back into the same texture through
+    /// <see cref="PixelBuffer.Apply"/>, so a mod may read a texture, paint it and write it back.
+    /// </para>
+    /// </summary>
+    /// <param name="texture">A texture this factory produced; the engine reads back only a texture it can reach
+    /// its pixels of, which a texture the game unpacked from a bundled asset is not.</param>
+    /// <param name="pixels">The buffer, or null when the texture was refused.</param>
+    bool TryReadPixels(TextureHandle texture, [NotNullWhen(true)] out PixelBuffer? pixels);
+
+    /// <summary>
+    /// Builds the game's own character pixel art — the set a character wears, which the game's animator draws
+    /// its layers out of (<see cref="CharacterSpriteSetKind"/>). The frames are sprites the factory cut, and a
+    /// set only carries what the mod states about it: <see cref="CharacterSpriteSetStyle"/> is where a mod says
+    /// that its character spins or walks faster, and everything it leaves out keeps the value the game's own
+    /// pixel art carries, which is what a mod that brought nothing but art wants.
+    /// <para>
+    /// The result is put on a character with <c>IPresentationServices.ApplyCharacterSprite</c>; the game's own
+    /// sprite set object never leaves the bridge.
+    /// </para>
+    /// </summary>
+    /// <param name="kind">The compact set (main and eyes) or the layered full set (main, eyes, hair and back).</param>
+    /// <param name="frames">The frame sprites per layer, grouped as the game's animator indexes them.</param>
+    /// <param name="style">What the set does beyond its frames; leave it at
+    /// <see cref="CharacterSpriteSetStyle.Default"/> to keep the game's own values.</param>
+    /// <param name="set">The set, or null when the frames, the kind or the style was refused.</param>
+    bool TryCreateCharacterSpriteSet(
+        CharacterSpriteSetKind kind,
+        CharacterSpriteSetFrames frames,
+        CharacterSpriteSetStyle style,
+        [NotNullWhen(true)] out CharacterSpriteSetHandle? set);
 
     /// <summary>
     /// Builds an audio clip out of already decoded samples. The factory does not decode a container: a WAV

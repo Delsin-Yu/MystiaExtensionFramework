@@ -5,7 +5,7 @@ namespace Mystia.Scenes;
 
 /// <summary>
 /// The presentation members of a scene session: the camera, the effect and audio layers, the floating text a
-/// scene shows, and the world positions the running scene owns.
+/// scene shows, the characters that walk in it, and the world positions the running scene owns.
 ///
 /// They act on the scene that is running right now, so they are only valid inside the <c>Setup</c>,
 /// <c>Update</c> and <c>Shutdown</c> of the scene loop they were handed to; a scene change invalidates them
@@ -86,6 +86,30 @@ public interface IPresentationServices
     /// <param name="style">The offset, colour and font size of the label.</param>
     /// <returns>The label, or null when the input was refused.</returns>
     IFloatingLabel? AttachLabel(TransformHandle host, string text, FloatingLabelStyle style) => null;
+
+    /// <summary>
+    /// Wraps the character a mod is already working with — the character unit itself, its game object, or any
+    /// component on it — into the opaque handle <see cref="ApplyCharacterSprite"/> takes. Main thread only.
+    /// </summary>
+    /// <param name="character">The character to wrap.</param>
+    /// <returns>The handle, or null when <paramref name="character"/> carries no character.</returns>
+    CharacterHandle? BindCharacter(object character) => null;
+
+    /// <summary>
+    /// Puts a character pixel sprite set (<c>IAssetFactory.TryCreateCharacterSpriteSet</c>) on a character. A
+    /// full set switches the character to the game's layered animator and a compact set back to the compact
+    /// one, so this is also how a character that was built for one kind of set takes the other.
+    /// </summary>
+    /// <param name="character">A handle <see cref="BindCharacter"/> produced.</param>
+    /// <param name="spriteSet">A set the asset factory built.</param>
+    /// <param name="restart">
+    /// True (the default) drops what the character currently wears and stops its animator before the set goes
+    /// on, which is what makes a second call take effect: the game leaves the set a character already wears
+    /// alone, and it starts a fresh spin routine for a spinning set without stopping the previous one. False is
+    /// the game's own behaviour — the call is then a no-op when the character already wears exactly this set.
+    /// </param>
+    /// <returns>True when the set was put on the character.</returns>
+    bool ApplyCharacterSprite(CharacterHandle character, CharacterSpriteSetHandle spriteSet, bool restart = true) => false;
 
     /// <summary>World position of the player character.</summary>
     Vector3 PlayerPosition => throw new NotSupportedException();

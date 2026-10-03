@@ -18,10 +18,10 @@ namespace Mystia.Modding.Bridge;
 /// An asset is named by the key it was filed under, so the shared service never needs to know which mod called
 /// it: audio comes from <c>IAssetLocator.TryRegisterAudioClip</c>, effect templates from
 /// <see cref="TryRegisterPrefab"/> (or from the framework's own map path), and the engine work lives in
-/// <see cref="EffectVfx"/>, <see cref="EffectPrefabs"/>, <see cref="SceneAudio"/> and
-/// <see cref="FloatingLabels"/>.
+/// <see cref="EffectVfx"/>, <see cref="EffectPrefabs"/>, <see cref="SceneAudio"/>,
+/// <see cref="FloatingLabels"/> and <see cref="CharacterSprites"/>.
 /// </summary>
-internal sealed class PresentationServices : IPresentationServices
+internal sealed partial class PresentationServices : IPresentationServices
 {
     /// <summary>The instance every scene services object hands out as <c>Presentation</c>.</summary>
     internal static readonly PresentationServices Shared = new();

@@ -95,6 +95,13 @@ public sealed class PixelBuffer
     /// </summary>
     public void Apply() => _upload(_pixels);
 
+    /// <summary>
+    /// Seeds the whole buffer from values the engine read back (<see cref="IAssetFactory.TryReadPixels"/>). The
+    /// engine hands its own pixels back rows bottom up, which is the layout this buffer uses, so the values go
+    /// in exactly as they came out.
+    /// </summary>
+    internal void Load(ReadOnlySpan<Color> pixels) => pixels.CopyTo(_pixels);
+
     private void Bounds(int x, int y)
     {
         if ((uint)x >= (uint)Width)

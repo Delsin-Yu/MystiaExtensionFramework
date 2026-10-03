@@ -100,6 +100,58 @@ internal sealed class UnityAssetFactory : IAssetFactory
         return true;
     }
 
+    public bool TryGetTextureSize(TextureHandle texture, out int width, out int height)
+    {
+        width = 0;
+        height = 0;
+        if (Image(texture) is not { } image)
+            return false;
+
+        width = image.width;
+        height = image.height;
+        return true;
+    }
+
+    public bool TryReadPixels(TextureHandle texture, [NotNullWhen(true)] out PixelBuffer? pixels)
+    {
+        pixels = null;
+        if (Image(texture) is not { } image)
+            return false;
+        // A read back is a full copy of the texture in a buffer, so it is bounded the same way one a mod asks
+        // for is: a mod's typo must not ask for hundreds of megabytes.
+        if ((long)image.width * image.height > MaximumPixels)
+            return false;
+
+        try
+        {
+            // The engine hands its pixels back rows bottom up, which is the layout the buffer uses, so the
+            // values go in exactly as they came out; the buffer uploads back into the same texture.
+            var read = image.GetPixels();
+            var seed = new MirrorColor[read.Length];
+            for (var index = 0; index < read.Length; index++)
+                seed[index] = new MirrorColor(read[index].r, read[index].g, read[index].b, read[index].a);
+
+            var buffer = new PixelBuffer(image.width, image.height, texture, new PixelSink(image).Upload);
+            buffer.Load(seed);
+            pixels = buffer;
+            return true;
+        }
+        catch (Exception error)
+        {
+            // The engine refuses to read a texture whose pixels it cannot reach (one the game unpacked from a
+            // bundled asset, for instance), which is a mod's input rather than a framework failure.
+            GameBridgeHook.Trace($"AssetFactory: the pixels of a {image.name} texture could not be read back: {error.GetBaseException().Message}");
+            return false;
+        }
+    }
+
+    public bool TryCreateCharacterSpriteSet(
+        CharacterSpriteSetKind kind,
+        CharacterSpriteSetFrames frames,
+        CharacterSpriteSetStyle style,
+        [NotNullWhen(true)] out CharacterSpriteSetHandle? set) =>
+        CharacterSprites.TryCreate(kind, frames, style, out set);
+
     public bool TryCreateAudioClip(
         string name,
         ReadOnlySpan<float> interleavedSamples,
@@ -203,6 +255,16 @@ internal sealed class UnityAssetFactory : IAssetFactory
             return false;
         return float.IsFinite(pixelsPerUnit) && pixelsPerUnit > 0f;
     }
+
+    // The engine texture behind a handle, or null for anything else: a handle the framework did not build (a
+    // mod cannot build one itself, but another component of the framework could) is a miss, not a throw, so
+    // every entry that takes a texture answers false rather than throwing at it.
+    private static Texture2D? Image(TextureHandle? texture) => texture switch
+    {
+        UnityTextureHandle mirror => mirror.Texture as Texture2D,
+        _ when ReferenceEquals(texture, TextureHandle.White) => Texture2D.whiteTexture,
+        _ => null,
+    };
 
     // What every texture a mod builds looks like: the game draws its own art point filtered, and a texture
     // hidden from the scene teardown survives a scene change a mod's handle outlives.

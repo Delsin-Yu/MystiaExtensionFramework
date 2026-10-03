@@ -45,6 +45,14 @@ public interface ICommonServices
     /// </summary>
     IAssetLocator Locator { get; }
 
+    /// <summary>
+    /// Builds and publishes the day scene maps a mod ships. A map is the one asset a mod cannot reach the
+    /// pipeline with on its own - the game loads it by instantiating a template the pipeline resolves - so the
+    /// builder assembles that template out of a description and writes the map into the day scene's own
+    /// reference table. Building creates engine objects, so it is main thread only.
+    /// </summary>
+    IDayMapBuilder MapBuilder { get; }
+
     void LoadScene(Scene scene);
 
     void OpenDialog(DialogPackage dialog, Action onFinished);

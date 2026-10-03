@@ -13,12 +13,14 @@ using UnityEngine;
 
 using LockLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_6.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObSpCoObObUnique;
 using OnFailLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObObObUnique;
+using Phase1SpawnLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObWaVoObMoInVoBoOb0;
 using Phase2SpawnLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObWaVoObMoInVoBoOb1;
 using Phase3SpawnLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_6.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObWaVoObMoInVoBoOb0;
 using PhaseClock = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObFu1BoexSiInObObUnique;
 using Retake = GameData.Profile.YuyukoBossData.__c__DisplayClass16_6;
 using RetakeHelper = GameData.Profile.YuyukoBossData.__c__DisplayClass16_7;
 using RunLoop = GameData.Profile.YuyukoBossData._MainChallengeLoop_d__16;
+using StandContext = GameData.Profile.YuyukoBossData.__c__DisplayClass16_9;
 using StoryContext = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0;
 
 namespace Mystia.Modding.Bridge;
@@ -56,6 +58,10 @@ internal static class ChallengeTargets
         NamedType("the run's shared closure", typeof(StoryContext), "GameData.Profile.YuyukoBossData+<>c__DisplayClass16_0");
         NamedType("the retake's closure", typeof(Retake), "GameData.Profile.YuyukoBossData+<>c__DisplayClass16_6");
         NamedType("the retake's cooker helper", typeof(RetakeHelper), "GameData.Profile.YuyukoBossData+<>c__DisplayClass16_7");
+        NamedType(
+            "the stand's evaluation closure",
+            typeof(StandContext),
+            "GameData.Profile.YuyukoBossData+<>c__DisplayClass16_9");
         NamedType("the main loop", typeof(RunLoop), "GameData.Profile.YuyukoBossData+<MainChallengeLoop>d__16");
         NamedType(
             "the phase clock",
@@ -65,6 +71,10 @@ internal static class ChallengeTargets
             "the failure story",
             typeof(OnFailLoop),
             "GameData.Profile.YuyukoBossData+<>c__DisplayClass16_0+<<MainChallengeLoop>g__OnFail|4>d");
+        NamedType(
+            "phase one's guest spawn loop",
+            typeof(Phase1SpawnLoop),
+            "GameData.Profile.YuyukoBossData+<>c__DisplayClass16_0+<<MainChallengeLoop>g__Phase1GuestSpawnLoop|7>d");
         NamedType(
             "phase two's guest spawn loop",
             typeof(Phase2SpawnLoop),
@@ -89,9 +99,28 @@ internal static class ChallengeTargets
 
         Method("the phase clock's step", typeof(PhaseClock), "MoveNext");
         Method("the failure story's step", typeof(OnFailLoop), "MoveNext");
+        Method("phase one's spawn step", typeof(Phase1SpawnLoop), "MoveNext");
         Method("phase two's spawn step", typeof(Phase2SpawnLoop), "MoveNext");
         Method("phase three's spawn step", typeof(Phase3SpawnLoop), "MoveNext");
         Method("the retake's swallow step", typeof(LockLoop), "MoveNext");
+        Method(
+            "the story attempt's evaluation callback",
+            typeof(StoryContext),
+            ChallengeEvaluationSeams.MemberName,
+            typeof(GuestGroupController.EvaluationResult),
+            EvaluationCallbackParameters);
+        Method(
+            "the retake's evaluation callback",
+            typeof(Retake),
+            ChallengeEvaluationSeams.MemberName,
+            typeof(GuestGroupController.EvaluationResult),
+            EvaluationCallbackParameters);
+        Method(
+            "the stand's evaluation callback",
+            typeof(StandContext),
+            ChallengeEvaluationSeams.MemberName,
+            typeof(GuestGroupController.EvaluationResult),
+            EvaluationCallbackParameters);
         Method("the retake's buff cleanup", typeof(Retake), "Method_Internal_Void_0", typeof(void), Type.EmptyTypes);
         Method("the challenge's boss lookup", typeof(NightSceneDirector), nameof(NightSceneDirector.GetControlled));
         Method("the night scene's leave", typeof(NightSceneDirector), nameof(NightSceneDirector.TryLeaveSession));
@@ -112,6 +141,20 @@ internal static class ChallengeTargets
         Property("the cooker's desk index", typeof(CookController), nameof(CookController.GridIndex));
         Method("the permanent hide", typeof(CookAnimator), nameof(CookAnimator.HideCookerPermanent));
     }
+
+    /// <summary>
+    /// The shape of every one of the three evaluation callbacks: the result it is handed, the group it
+    /// evaluates, the combo protection it is handed, and the message and combo protection it hands back. The
+    /// three are one local function of one shape, so one array serves all three checks.
+    /// </summary>
+    private static readonly System.Type[] EvaluationCallbackParameters =
+    [
+        typeof(GuestGroupController.EvaluationResult),
+        typeof(GuestGroupController),
+        typeof(bool),
+        typeof(string).MakeByRefType(),
+        typeof(bool).MakeByRefType(),
+    ];
 
     private static void NamedType(string what, System.Type type, string originalName)
     {

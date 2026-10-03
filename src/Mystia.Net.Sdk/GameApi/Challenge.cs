@@ -69,6 +69,35 @@ namespace Mystia.Scenes
         Hold = 1,
     }
 
+    /// <summary>
+    /// How an order a challenge evaluated scored, on the game's own scale. The values are the game's own
+    /// ladder, worst first, and they are the ones a challenge's own evaluation callback is handed and hands
+    /// back.
+    /// </summary>
+    public enum ChallengeEvaluationResult : byte
+    {
+        /// <summary>The order was refused: the worst verdict the game has.</summary>
+        Exbad = 0,
+
+        /// <summary>The order was bad.</summary>
+        Bad = 1,
+
+        /// <summary>The order was acceptable.</summary>
+        Normal = 2,
+
+        /// <summary>The order was good.</summary>
+        Good = 3,
+
+        /// <summary>The order was the best the game can score.</summary>
+        ExGood = 4,
+
+        /// <summary>
+        /// No verdict at all: the value a challenge's own callback leaves behind when it lets its own ladder
+        /// decide nothing. It is above every scored verdict, exactly as the game orders it.
+        /// </summary>
+        Null = 5,
+    }
+
     // Opaque token of one challenge run. A mod compares handles and passes them back to the framework; there
     // is no public way to build one.
     /// <summary>One run of a boss challenge, i.e. one <c>MainChallengeLoop</c>.</summary>
@@ -129,9 +158,12 @@ namespace Mystia.Scenes
         public static bool operator !=(ChallengeStep left, ChallengeStep right) => !left.Equals(right);
     }
 
-    // Opaque token of the challenge's own boss, i.e. the guest group its third phase is fought against. The
-    // same shape as ChallengeRunHandle: a mod compares handles, there is no public way to build one.
-    /// <summary>The challenge's own boss: the guest group the third phase is fought against.</summary>
+    // Opaque token of one guest group of a challenge run. The same shape as ChallengeRunHandle: a mod compares
+    // handles, there is no public way to build one.
+    /// <summary>
+    /// One guest group of a challenge run: the challenge's own boss, or a group the challenge itself evaluates.
+    /// A mod compares handles; there is no public way to build one.
+    /// </summary>
     public readonly struct ChallengeBossHandle : IEquatable<ChallengeBossHandle>
     {
         internal ChallengeBossHandle(int id) => Id = id;
@@ -180,6 +212,33 @@ namespace Mystia.Scenes
     /// </param>
     /// <param name="Position">The spot the phase's guests are spawned at.</param>
     public readonly record struct ChallengeSpawnAttempt(ChallengePhase Phase, int Index, Vector3 Position);
+
+    /// <summary>
+    /// One evaluation the challenge ran on one of its own guest groups: the group, the phase it happened in,
+    /// and the two values the challenge's own evaluation callback is handed - the result the game scored the
+    /// order with and the combo protection flag it computed.
+    /// <para>
+    /// <see cref="Result"/> and <see cref="ComboProtect"/> are the callback's own inputs, and a mod may rewrite
+    /// them from <see cref="IChallengeListener.OnPreBossEvaluated"/>: what it leaves behind is what the
+    /// callback receives. <see cref="Group"/>, <see cref="Phase"/> and <see cref="Kind"/> describe the
+    /// evaluation and are never read back.
+    /// </para>
+    /// </summary>
+    /// <param name="Group">
+    /// The guest group under evaluation. It is the same handle <see cref="IWorkSceneChallengeServices.Boss"/>
+    /// answers while that group is the challenge's own boss, and the group's own handle otherwise, so a mod can
+    /// tell the boss's evaluation from a group the challenge spawned to be evaluated.
+    /// </param>
+    /// <param name="Phase">The phase the evaluation happened in, which is the challenge's third phase.</param>
+    /// <param name="Kind">Whether the run is the story attempt or the retake.</param>
+    /// <param name="Result">The result the callback is handed; a mod may rewrite it.</param>
+    /// <param name="ComboProtect">The combo protection flag the callback is handed; a mod may rewrite it.</param>
+    public readonly record struct ChallengeBossEvaluation(
+        ChallengeBossHandle Group,
+        ChallengePhase Phase,
+        ChallengeRunKind Kind,
+        ChallengeEvaluationResult Result,
+        bool ComboProtect);
 
     /// <summary>
     /// The challenge of the running work scene: which phase runs, the time left on its clock, and the two
@@ -291,13 +350,14 @@ namespace Mystia.Listeners
 
     /// <summary>
     /// The challenge timeline of the work scene: phase starts and ends, the phase clock, the main loop's own
-    /// steps, and the iterations of a phase's guest spawn loop.
+    /// steps, the iterations of a phase's guest spawn loop, and the challenge's own evaluation callbacks.
     /// <para>
     /// The <c>OnPre…</c> members are interceptions: every listener is asked, so a cancellation never hides the
     /// event from the listeners registered after it, and what cancels reaches the framework once all of them
     /// ran. A cancellation holds the piece of the timeline the callback belongs to - the main loop step, the
-    /// clock's second or the spawn iteration - instead of letting the game run it; the notification that
-    /// reports that piece as done is then not delivered, because the game did not do it.
+    /// clock's second, the spawn iteration or the challenge's own evaluation callback - instead of letting the
+    /// game run it; the notification that reports that piece as done is then not delivered, because the game
+    /// did not do it.
     /// </para>
     /// </summary>
     [AutoWire]
@@ -356,6 +416,29 @@ namespace Mystia.Listeners
 
         /// <summary>The iteration reported by <paramref name="attempt"/> ran and spawned its guests.</summary>
         void OnChallengeGuestSpawned(ChallengeSpawnAttempt attempt) { }
+
+        /// <summary>
+        /// The challenge's own evaluation callback for <paramref name="evaluation"/>'s group is about to run,
+        /// with the result and the combo protection flag the game hands it. A mod may rewrite both
+        /// (<c>evaluation = evaluation with { Result = … }</c>), and the callback then runs with what the
+        /// listeners left behind, so the value reaches the challenge's own ladder and its own side effects
+        /// without the mod knowing what those are.
+        /// <para>
+        /// Cancelling keeps the challenge's own callback from running at all: its scoring and its side effects -
+        /// the life a boss loses over the group, the guests it tells to stop ordering, the cookers it locks -
+        /// are skipped, and the game goes on with the values the listeners left behind. This is a peer that
+        /// replays the ruling it was told, or an authority that decides the evaluation itself.
+        /// </para>
+        /// </summary>
+        void OnPreBossEvaluated(ref ChallengeBossEvaluation evaluation, ref bool cancelInvocation) { }
+
+        /// <summary>
+        /// The challenge's own evaluation callback behind <paramref name="evaluation"/> ran. The result and the
+        /// combo protection flag are the ones the callback ended at - the game's own verdict where it overrode
+        /// the values it was handed - so a mod that mirrors the challenge elsewhere follows what it really did.
+        /// Not delivered when a listener cancelled the callback, because the callback did not run.
+        /// </summary>
+        void OnBossEvaluated(in ChallengeBossEvaluation evaluation) { }
 
         /// <summary>
         /// The running challenge's failure story started: the game has disabled the player's panels, cleared

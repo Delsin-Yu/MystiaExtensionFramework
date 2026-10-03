@@ -1,7 +1,10 @@
+using System.Reflection;
+using HarmonyLib;
 using Mystia.Listeners;
 using Mystia.Modding.Bridge;
 using Mystia.Numerics;
 using Mystia.Scenes;
+using NightScene.GuestManagementUtility;
 using Xunit;
 
 namespace Mystia.Tests;
@@ -646,6 +649,390 @@ public sealed class ChallengeTests : IDisposable
         Assert.Equal(new[] { "only:swallowed:3" }, recorder.Events);
     }
 
+    // ---- the challenge's own evaluation callbacks ----------------------------------------------------
+
+    [Fact]
+    public void EveryListenerSeesTheEvaluationAndTheRewrittenVerdictTravelsThroughThem()
+    {
+        StartRun();
+        var order = new List<string>();
+        var first = new Recorder(order, "first").RewriteEvaluation(ChallengeEvaluationResult.ExGood, true);
+        var second = new Recorder(order, "second");
+        var third = new Recorder(order, "third");
+        Listen(first, second, third);
+
+        var result = ChallengeEvaluationResult.Normal;
+        var comboProtect = false;
+        var evaluation = Timeline.InterceptBossEvaluation(11, ChallengePhase.Three, ref result, ref comboProtect, out var cancel);
+
+        Assert.False(cancel);
+        // Every listener is asked, each of them is handed what the previous one left behind, and what the last
+        // one left behind is what the game's own callback receives.
+        Assert.Equal(
+            new[] { "first:pre-eval:Normal:False", "second:pre-eval:ExGood:True", "third:pre-eval:ExGood:True" },
+            order);
+        Assert.Equal(ChallengeEvaluationResult.ExGood, result);
+        Assert.True(comboProtect);
+        Assert.Equal(ChallengeEvaluationResult.ExGood, evaluation.Result);
+        Assert.True(evaluation.ComboProtect);
+        Assert.Equal(ChallengePhase.Three, evaluation.Phase);
+        Assert.Equal(ChallengeRunKind.Story, evaluation.Kind);
+        Assert.True(evaluation.Group != default);
+    }
+
+    [Fact]
+    public void ACancelledEvaluationIsHeldAndIsNotReportedAsRun()
+    {
+        StartRun();
+        var recorder = new Recorder([], "only").CancelEvaluation();
+        Listen(recorder);
+
+        var result = ChallengeEvaluationResult.Good;
+        var comboProtect = false;
+        var evaluation = Timeline.InterceptBossEvaluation(3, ChallengePhase.Three, ref result, ref comboProtect, out var cancel);
+
+        Assert.True(cancel);
+        // The values the listeners left behind are what the game goes on with in place of the callback.
+        Assert.Equal(ChallengeEvaluationResult.Good, evaluation.Result);
+
+        // The callback did not run, so the notification that reports it as run is not delivered.
+        Timeline.BossEvaluated(evaluation, evaluation.Result, evaluation.ComboProtect, ran: false);
+        Assert.Equal(new[] { "only:pre-eval:Good:False" }, recorder.Events);
+    }
+
+    [Fact]
+    public void ACancelNeverHidesTheEvaluationFromTheListenersBehindIt()
+    {
+        StartRun();
+        var order = new List<string>();
+        var first = new Recorder(order, "first").CancelEvaluation();
+        var second = new Recorder(order, "second");
+        var third = new Recorder(order, "third");
+        Listen(first, second, third);
+
+        var result = ChallengeEvaluationResult.Bad;
+        var comboProtect = false;
+        Timeline.InterceptBossEvaluation(9, ChallengePhase.Three, ref result, ref comboProtect, out var cancel);
+
+        Assert.True(cancel);
+        // The cancel of the first listener does not hide the event from the listeners after it, and both of them
+        // see the verdict it left behind.
+        Assert.Equal(
+            new[] { "first:pre-eval:Bad:False", "second:pre-eval:Bad:False", "third:pre-eval:Bad:False" },
+            order);
+        Assert.False(first.SawEvaluationCancel);
+        Assert.True(second.SawEvaluationCancel);
+        Assert.True(third.SawEvaluationCancel);
+    }
+
+    [Fact]
+    public void ARanEvaluationIsReportedWithTheValuesTheCallbackEndedAt()
+    {
+        StartRun();
+        var recorder = new Recorder([], "only");
+        Listen(recorder);
+
+        var result = ChallengeEvaluationResult.Normal;
+        var comboProtect = false;
+        var evaluation = Timeline.InterceptBossEvaluation(5, ChallengePhase.Three, ref result, ref comboProtect, out var cancel);
+        Assert.False(cancel);
+
+        // The listeners left Normal behind, and the game's own callback scored the group ExGood and protected
+        // the combo: the report is about what the callback did, not about what it was handed.
+        Timeline.BossEvaluated(evaluation, ChallengeEvaluationResult.ExGood, true, ran: true);
+
+        Assert.Equal(new[] { "only:pre-eval:Normal:False", "only:eval:ExGood:True" }, recorder.Events);
+    }
+
+    [Fact]
+    public void AnEvaluationOutsideARunIsLeftAlone()
+    {
+        var recorder = new Recorder([], "only");
+        Listen(recorder);
+
+        // No run the framework owns: another challenge's callback is not this timeline's business, so nothing is
+        // asked and the values the game handed over are not touched.
+        var result = ChallengeEvaluationResult.Good;
+        var comboProtect = true;
+        var evaluation = Timeline.InterceptBossEvaluation(7, ChallengePhase.Three, ref result, ref comboProtect, out var cancel);
+
+        Assert.False(cancel);
+        Assert.Empty(recorder.Events);
+        Assert.Equal(ChallengeEvaluationResult.Good, result);
+        Assert.True(comboProtect);
+        Assert.True(evaluation == default);
+
+        // A report is dropped for the same reason: no run was behind the callback.
+        Timeline.BossEvaluated(evaluation, result, comboProtect, ran: true);
+        Assert.Empty(recorder.Events);
+
+        // The same holds once the run ended, even though its handles still answer.
+        StartRun();
+        Timeline.EndRun();
+        Assert.True(Timeline.InterceptBossEvaluation(7, ChallengePhase.Three, ref result, ref comboProtect, out cancel) == default);
+        Assert.False(cancel);
+        Assert.Empty(recorder.Events);
+    }
+
+    [Fact]
+    public void TheGroupHandleIsOneHandlePerGroupAndDiesWithTheRun()
+    {
+        StartRun();
+        var result = ChallengeEvaluationResult.Normal;
+        var comboProtect = false;
+
+        var boss = Timeline.InterceptBossEvaluation(21, ChallengePhase.Three, ref result, ref comboProtect, out _);
+        var again = Timeline.InterceptBossEvaluation(21, ChallengePhase.Three, ref result, ref comboProtect, out _);
+        var stand = Timeline.InterceptBossEvaluation(22, ChallengePhase.Three, ref result, ref comboProtect, out _);
+
+        // One group is one handle, however often it is evaluated; another group is another handle.
+        Assert.True(boss.Group != default);
+        Assert.Equal(boss.Group, again.Group);
+        Assert.NotEqual(boss.Group, stand.Group);
+
+        // The chain's own boss is one of the run's groups, so the boss's evaluation carries the boss's handle.
+        Timeline.CaptureBoss(21);
+        Assert.Equal(Timeline.Boss, boss.Group);
+
+        // A callback the game handed no group to names no group.
+        var nothing = Timeline.InterceptBossEvaluation(0, ChallengePhase.Three, ref result, ref comboProtect, out _);
+        Assert.True(nothing.Group == default);
+
+        // The next run drops every handle of the finished one, so a handle never means two groups.
+        Timeline.Reset();
+        StartRun();
+        var later = Timeline.InterceptBossEvaluation(21, ChallengePhase.Three, ref result, ref comboProtect, out _);
+        Assert.True(later.Group != boss.Group);
+        Assert.True(later.Group != stand.Group);
+    }
+
+    [Fact]
+    public void TheEvaluationCallbacksAreNamedByTheGameSource()
+    {
+        // The three are one local function of one shape declared three times, so the interop names all three the
+        // same way and only the runtime name tells them apart. The ordinals are the game's own, YuyukoBossData.cs
+        // 322/344 (story), 499/524 (stand) and 542/565 (retake), and each seam insists on its own.
+        Assert.Equal(
+            nameof(GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.Method_Internal_EvaluationResult_EvaluationResult_GuestGroupController_Boolean_byref_String_byref_Boolean_0),
+            ChallengeEvaluationSeams.MemberName);
+        Assert.Equal("<MainChallengeLoop>g__YuyukoOverrideEvaluationCallback|33", ChallengeStoryEvaluationSeam.NativeName);
+        Assert.Equal("<MainChallengeLoop>g__YuyukoOverrideEvaluationCallback|50", ChallengeRetakeEvaluationSeam.NativeName);
+        Assert.Equal("<MainChallengeLoop>g__GroupOverrideEvaluationCallback|70", ChallengeStandEvaluationSeam.NativeName);
+    }
+
+    [Fact]
+    public void EveryEvaluationSeamLocatesAndBindsItsCallback()
+    {
+        // Each of the three patches the callback of its own closure, pins that closure by the name the game's
+        // source gives it, and insists, at patch time, on the name the source gives the callback: the three
+        // callbacks answer to the same interop name, so only the runtime name keeps a seam off another build's
+        // callback.
+        Check(
+            typeof(ChallengeStoryEvaluationSeam),
+            "Story",
+            typeof(GameData.Profile.YuyukoBossData.__c__DisplayClass16_0),
+            "GameData.Profile.YuyukoBossData+<>c__DisplayClass16_0");
+        Check(
+            typeof(ChallengeRetakeEvaluationSeam),
+            "Retake",
+            typeof(GameData.Profile.YuyukoBossData.__c__DisplayClass16_6),
+            "GameData.Profile.YuyukoBossData+<>c__DisplayClass16_6");
+        Check(
+            typeof(ChallengeStandEvaluationSeam),
+            "Stand",
+            typeof(GameData.Profile.YuyukoBossData.__c__DisplayClass16_9),
+            "GameData.Profile.YuyukoBossData+<>c__DisplayClass16_9");
+
+        void Check(Type seam, string patchClass, Type closure, string closureName)
+        {
+            // The member is resolved through NamedSeams, i.e. by the interop name and against the game's own
+            // name of the callback, which is a patch time thing (it needs the IL2CPP runtime). What is checked
+            // here is that the seam asks for exactly that, and that the patch class is wired to the same member.
+            var located = seam.GetField("Located", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(located);
+            Assert.Equal(typeof(MethodInfo), located!.FieldType);
+
+            // The closure the seam patches is the one the interop carries the game's own name for.
+            var declared = closure.GetCustomAttributesData()
+                .First(attribute => attribute.AttributeType.Name == "ObfuscatedNameAttribute")
+                .ConstructorArguments[0].Value as string;
+            Assert.Equal(closureName, declared);
+
+            var container = seam.GetNestedType(patchClass, BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException($"{seam.Name}.{patchClass} is gone.");
+            var prepare = container.GetMethod("Prepare", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(prepare);
+            Assert.NotNull(prepare!.GetCustomAttribute<HarmonyPrepare>());
+
+            var patch = Assert.Single(container.GetCustomAttributes<HarmonyPatch>());
+            Assert.Equal(closure, patch.info.declaringType);
+            Assert.Equal(ChallengeEvaluationSeams.MemberName, patch.info.methodName);
+
+            // Harmony binds a patch argument by name, so every argument the patch methods declare has to be an
+            // argument the callback really carries (or one of Harmony's own injections).
+            var target = AccessTools.Method(closure, ChallengeEvaluationSeams.MemberName);
+            Assert.NotNull(target);
+            BindsEveryArgument(container, "Prefix", target!);
+            BindsEveryArgument(container, "Postfix", target!);
+        }
+    }
+
+    [Fact]
+    public void PhaseOnesSpawnLoopIsGatedLikeTheOthers()
+    {
+        // The phase one loop the seams hook is the one the game's own source calls Phase1GuestSpawnLoop, and it
+        // is gated at its own step, the same way phase two's and the retake's third phase are.
+        var container = typeof(ChallengeSpawnSeams).GetNestedType("Phase1Guests", BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("The phase one spawn seam is gone.");
+        var patch = Assert.Single(container.GetCustomAttributes<HarmonyPatch>());
+        Assert.Equal("MoveNext", patch.info.methodName);
+        var source = patch.info.declaringType!.GetCustomAttributesData()
+            .First(attribute => attribute.AttributeType.Name == "ObfuscatedNameAttribute")
+            .ConstructorArguments[0].Value as string;
+        Assert.Equal(
+            "GameData.Profile.YuyukoBossData+<>c__DisplayClass16_0+<<MainChallengeLoop>g__Phase1GuestSpawnLoop|7>d",
+            source);
+
+        StartRun();
+        var recorder = new Recorder([], "only").CancelSpawn(ChallengePhase.One);
+        Listen(recorder);
+
+        var attempt = Timeline.Attempt(ChallengePhase.One);
+        var ran = Timeline.InterceptGuestSpawn(attempt);
+        Timeline.GuestSpawned(attempt, ran);
+
+        // Phase one is a phase of the same gate: its iteration is held and, having been held, is not reported.
+        Assert.False(ran);
+        Assert.Equal(new[] { "only:pre-spawn:1" }, recorder.Events);
+    }
+
+    [Fact]
+    public void HarmonyAcceptsTheArgumentShapesTheEvaluationSeamsUse()
+    {
+        // The evaluation seams rewrite the callback's input in their prefix, write the callback's own out
+        // parameters there for the callback they cancelled, decide its result from the prefix, and read an out
+        // parameter of the callback by value in their postfix. Harmony has to accept all of that or the patch
+        // class is never installed - and the installer only logs that - so the shapes are checked here, against
+        // a target of the callback's own signature (the game is what is missing, not the shape).
+        const string Owner = "dev.mystia.modding.bridge.tests.evaluation-shapes";
+        var harmony = new Harmony(Owner);
+        try
+        {
+            new PatchClassProcessor(harmony, typeof(EvaluationShapeProbe.Patch)).Patch();
+
+            // The callback runs: the values the prefix rewrote are what it is handed, and its own result and its
+            // own out parameters are what the caller gets.
+            EvaluationShapeProbe.Skip = false;
+            var ran = EvaluationShapeProbe.Callback(
+                GuestGroupController.EvaluationResult.Normal,
+                null!,
+                oldComboProtect: true,
+                out var ranMessage,
+                out var ranComboProtect);
+
+            Assert.Equal(GuestGroupController.EvaluationResult.ExGood, EvaluationShapeProbe.HandedResult);
+            Assert.False(EvaluationShapeProbe.HandedComboProtect);
+            Assert.Equal(GuestGroupController.EvaluationResult.Bad, ran);
+            Assert.Equal("the game's own message", ranMessage);
+            Assert.False(ranComboProtect);
+            Assert.True(EvaluationShapeProbe.RanOriginal);
+
+            // The callback is cancelled: the prefix decided its result and both of its out parameters.
+            EvaluationShapeProbe.Skip = true;
+            var skipped = EvaluationShapeProbe.Callback(
+                GuestGroupController.EvaluationResult.Normal,
+                null!,
+                oldComboProtect: true,
+                out var skippedMessage,
+                out var skippedComboProtect);
+
+            Assert.Equal(GuestGroupController.EvaluationResult.ExGood, skipped);
+            Assert.Equal(string.Empty, skippedMessage);
+            Assert.False(skippedComboProtect);
+            // The state travelled from the prefix to the postfix, which saw what the prefix left behind.
+            Assert.Equal(7, EvaluationShapeProbe.State);
+            Assert.False(EvaluationShapeProbe.RanOriginal);
+            Assert.Equal(GuestGroupController.EvaluationResult.ExGood, EvaluationShapeProbe.ReportedResult);
+            Assert.False(EvaluationShapeProbe.ReportedComboProtect);
+        }
+        finally
+        {
+            Harmony.UnpatchID(Owner);
+        }
+    }
+
+    // The callback's own shape, and a patch of it with the shape every evaluation seam uses.
+    private static class EvaluationShapeProbe
+    {
+        internal static bool Skip;
+
+        internal static int State;
+
+        internal static bool RanOriginal;
+
+        internal static GuestGroupController.EvaluationResult HandedResult;
+
+        internal static bool HandedComboProtect;
+
+        internal static GuestGroupController.EvaluationResult ReportedResult;
+
+        internal static bool ReportedComboProtect;
+
+        internal static GuestGroupController.EvaluationResult Callback(
+            GuestGroupController.EvaluationResult lastResult,
+            GuestGroupController thisGuestGroup,
+            bool oldComboProtect,
+            out string message,
+            out bool comboProtect)
+        {
+            HandedResult = lastResult;
+            HandedComboProtect = oldComboProtect;
+            message = "the game's own message";
+            comboProtect = oldComboProtect;
+            return GuestGroupController.EvaluationResult.Bad;
+        }
+
+        [HarmonyPatch(typeof(EvaluationShapeProbe), nameof(Callback))]
+        internal static class Patch
+        {
+            [HarmonyPrefix]
+            private static bool Prefix(
+                ref GuestGroupController.EvaluationResult lastResult,
+                GuestGroupController thisGuestGroup,
+                ref bool oldComboProtect,
+                out string message,
+                out bool comboProtect,
+                ref GuestGroupController.EvaluationResult __result,
+                out int __state)
+            {
+                lastResult = GuestGroupController.EvaluationResult.ExGood;
+                oldComboProtect = !oldComboProtect;
+                message = string.Empty;
+                comboProtect = false;
+                // The state travelled to the postfix: there is no group to hand over in this host.
+                __state = thisGuestGroup is null ? 7 : 1;
+                if (!Skip)
+                    return true;
+
+                __result = GuestGroupController.EvaluationResult.ExGood;
+                return false;
+            }
+
+            [HarmonyPostfix]
+            private static void Postfix(
+                int __state,
+                GuestGroupController.EvaluationResult __result,
+                bool comboProtect,
+                bool __runOriginal)
+            {
+                State = __state;
+                RanOriginal = __runOriginal;
+                ReportedResult = __result;
+                ReportedComboProtect = comboProtect;
+            }
+        }
+    }
+
     [Fact]
     public void EveryHookedChallengeTargetExistsInThePinnedInterop() => ChallengeTargets.Verify();
 
@@ -716,6 +1103,35 @@ public sealed class ChallengeTests : IDisposable
             _registry.Add(listener);
     }
 
+    // Harmony binds a patch method's arguments by name against the target's own, and a name the target does not
+    // carry keeps the whole patch from installing (the installer only logs that). Every argument of every
+    // challenge evaluation patch is checked here instead, against the real interop member the patch names.
+    private static void BindsEveryArgument(Type container, string patchMethod, MethodInfo target)
+    {
+        var method = container.GetMethod(patchMethod, BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException($"{container.Name}.{patchMethod} is gone.");
+
+        foreach (var parameter in method.GetParameters())
+        {
+            if (IsInjected(parameter.Name!))
+                continue;
+
+            var bound = target.GetParameters().FirstOrDefault(candidate => candidate.Name == parameter.Name);
+            Assert.True(
+                bound is not null,
+                $"{container.Name}.{patchMethod} binds '{parameter.Name}', which the callback does not carry.");
+            Assert.Equal(Plain(bound!.ParameterType), Plain(parameter.ParameterType));
+        }
+    }
+
+    // The arguments Harmony injects itself, plus its positional argument names.
+    private static bool IsInjected(string name) =>
+        name is "__instance" or "__result" or "__state" or "__runOriginal" or "__originalMethod" or "__args"
+        || name.StartsWith("___", StringComparison.Ordinal)
+        || (name.Length > 2 && name[0] == '_' && name[1] == '_' && name.Skip(2).All(char.IsAsciiDigit));
+
+    private static Type Plain(Type type) => type.IsByRef ? type.GetElementType()! : type;
+
     // The engine side of the boss mirror, stood in for by a plain object: everything the services and the timeline
     // do with a boss goes through this shape, so the whole mirror can be exercised without the game running.
     private sealed class FakeBossMirror : IChallengeBossMirror
@@ -767,6 +1183,9 @@ public sealed class ChallengeTests : IDisposable
         private float _tickToCancel = float.NaN;
         private ChallengePhase? _spawnToCancel;
         private List<ChallengeClockStop>? _phaseEnds;
+        private ChallengeEvaluationResult? _rewriteEvaluation;
+        private bool _rewriteComboProtect;
+        private bool _cancelEvaluation;
 
         internal Recorder(List<string> events, string name)
         {
@@ -778,7 +1197,22 @@ public sealed class ChallengeTests : IDisposable
 
         internal bool SawCancelOnStep { get; private set; }
 
+        internal bool SawEvaluationCancel { get; private set; }
+
         internal bool Hold { get; set; }
+
+        internal Recorder RewriteEvaluation(ChallengeEvaluationResult result, bool comboProtect)
+        {
+            _rewriteEvaluation = result;
+            _rewriteComboProtect = comboProtect;
+            return this;
+        }
+
+        internal Recorder CancelEvaluation()
+        {
+            _cancelEvaluation = true;
+            return this;
+        }
 
         internal Recorder CancelStep(int step)
         {
@@ -853,6 +1287,19 @@ public sealed class ChallengeTests : IDisposable
 
         public void OnChallengeGuestSpawned(ChallengeSpawnAttempt attempt) =>
             _events.Add($"{_name}:spawned:{attempt.Index}");
+
+        public void OnPreBossEvaluated(ref ChallengeBossEvaluation evaluation, ref bool cancelInvocation)
+        {
+            _events.Add($"{_name}:pre-eval:{evaluation.Result}:{evaluation.ComboProtect}");
+            SawEvaluationCancel = cancelInvocation;
+            if (_rewriteEvaluation is { } result)
+                evaluation = evaluation with { Result = result, ComboProtect = _rewriteComboProtect };
+            if (_cancelEvaluation)
+                cancelInvocation = true;
+        }
+
+        public void OnBossEvaluated(in ChallengeBossEvaluation evaluation) =>
+            _events.Add($"{_name}:eval:{evaluation.Result}:{evaluation.ComboProtect}");
 
         public void OnChallengeFailureStarted() => _events.Add($"{_name}:failure");
 

@@ -5,6 +5,7 @@ using NightScene.UI.HUDUtility;
 using UnityEngine;
 
 using MirrorVector3 = Mystia.Numerics.Vector3;
+using Phase1SpawnLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObWaVoObMoInVoBoOb0;
 using PhaseClock = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObFu1BoexSiInObObUnique;
 using Phase2SpawnLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObWaVoObMoInVoBoOb1;
 using Phase3SpawnLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_6.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObWaVoObMoInVoBoOb0;
@@ -18,11 +19,11 @@ namespace Mystia.Modding.Bridge;
 /// <para>
 /// All four pieces live in compiler generated members of <c>YuyukoBossData.MainChallengeLoop</c>: the loop's
 /// own coroutine state machine, the closure it captures, and the state machines of the local functions inside
-/// it (the shared phase clock, phase 2's guest spawn loop and the retake's boss stand spawn loop). The interop
-/// spells those names in a way that survives obfuscation - the mangled name carries which state machine it is
-/// and which closure it belongs to - but the closure numbers belong to the game build the interop was
-/// generated from, the build <c>Mystia.InteropGen</c> refuses to generate for anything but (it pins
-/// GameAssembly.dll by hash).
+/// it (the shared phase clock, the guest spawn loop of every phase that has one, and the retake's boss stand
+/// spawn loop). The interop spells those names in a way that survives obfuscation - the mangled name carries
+/// which state machine it is and which closure it belongs to - but the closure numbers belong to the game build
+/// the interop was generated from, the build <c>Mystia.InteropGen</c> refuses to generate for anything but (it
+/// pins GameAssembly.dll by hash).
 /// </para>
 /// <para>
 /// A target named here therefore compiles against that pinned build; a build the interop is regenerated for
@@ -239,6 +240,30 @@ internal static class ChallengeClockSeams
 /// <summary>The guest spawn loops of the challenge's phases: one per phase that spawns guests of its own.</summary>
 internal static class ChallengeSpawnSeams
 {
+    /// <summary>
+    /// Phase one's normal guest spawn loop, which is the phase's whole content: the guests that fill the desks
+    /// are what the fund target is earned from. The loop has the very shape phase two's and the retake's third
+    /// phase have - an iteration spawns unless the phase has no free seat, and then waits its interval - so it
+    /// is gated the same way, with the same attempt and the same hold.
+    /// </summary>
+    [HarmonyPatch(typeof(Phase1SpawnLoop), nameof(Phase1SpawnLoop.MoveNext))]
+    private static class Phase1Guests
+    {
+        private static bool Prefix(Phase1SpawnLoop __instance, ref bool __result, out ChallengeSpawnAttempt __state)
+        {
+            __state = ChallengeTimeline.Shared.Attempt(ChallengePhase.One);
+            if (ChallengeTimeline.Shared.InterceptGuestSpawn(__state))
+                return true;
+
+            __instance.__2__current = ChallengeSeams.SpawnHold();
+            __result = true;
+            return false;
+        }
+
+        private static void Postfix(ChallengeSpawnAttempt __state, bool __runOriginal) =>
+            ChallengeTimeline.Shared.GuestSpawned(__state, __runOriginal);
+    }
+
     /// <summary>Phase two's special guest spawn loop.</summary>
     [HarmonyPatch(typeof(Phase2SpawnLoop), nameof(Phase2SpawnLoop.MoveNext))]
     private static class Phase2Guests

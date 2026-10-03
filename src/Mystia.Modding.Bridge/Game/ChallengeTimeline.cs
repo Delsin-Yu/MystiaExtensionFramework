@@ -62,7 +62,7 @@ internal sealed class ChallengeTimeline
 
     private int _nextRun;
     private int _nextClock;
-    private int _nextBoss;
+    private int _nextGroup;
 
     private ChallengeRunHandle _run;
     private bool _running;
@@ -87,6 +87,7 @@ internal sealed class ChallengeTimeline
 
     private nint _boss;
     private ChallengeBossHandle _bossHandle;
+    private readonly Dictionary<nint, ChallengeBossHandle> _groups = [];
     private bool? _bossOrderEnabled;
     private int _bossLife = -1;
     private bool _bossLifeKnown;
@@ -259,6 +260,7 @@ internal sealed class ChallengeTimeline
         _spawnPosition = default;
         _boss = 0;
         _bossHandle = default;
+        _groups.Clear();
         _bossOrderEnabled = null;
         _bossLife = -1;
         _bossLifeKnown = false;
@@ -525,10 +527,77 @@ internal sealed class ChallengeTimeline
     /// </summary>
     internal void CaptureBoss(nint pointer)
     {
-        if (!_running || pointer == 0 || pointer == _boss)
+        if (!_running || pointer == 0)
             return;
+        // The boss is one of the run's guest groups, so it carries the very handle an evaluation of it carries.
         _boss = pointer;
-        _bossHandle = new ChallengeBossHandle(++_nextBoss);
+        _bossHandle = HandleFor(pointer);
+    }
+
+    /// <summary>
+    /// The handle of one guest group of the run: the same handle for the same group for as long as the run is
+    /// known, and a fresh one for a group the run has not been asked about. Zero has no handle, because a
+    /// callback the game never handed a group to is evaluating nothing.
+    /// </summary>
+    internal ChallengeBossHandle HandleFor(nint group)
+    {
+        if (group == 0)
+            return default;
+        if (_groups.TryGetValue(group, out var handle))
+            return handle;
+
+        handle = new ChallengeBossHandle(++_nextGroup);
+        _groups[group] = handle;
+        return handle;
+    }
+
+    /// <summary>
+    /// One of the challenge's own evaluation callbacks is about to run: <paramref name="group"/> is the group it
+    /// evaluates, and <paramref name="result"/> and <paramref name="comboProtect"/> are the values the game
+    /// hands it, which the listeners see and may rewrite and which are written back here. The returned value is
+    /// what the listeners were shown; <paramref name="cancel"/> is true when the callback must not run at all,
+    /// and the values the listeners left behind are then what stands in for it.
+    /// <para>
+    /// A run the framework does not own is left alone: nothing is asked, nothing is written back and no handle
+    /// is handed out, so another challenge's callback is not touched.
+    /// </para>
+    /// </summary>
+    internal ChallengeBossEvaluation InterceptBossEvaluation(
+        nint group,
+        ChallengePhase phase,
+        ref ChallengeEvaluationResult result,
+        ref bool comboProtect,
+        out bool cancel)
+    {
+        cancel = false;
+        if (!_running)
+            return default;
+
+        var evaluation = new ChallengeBossEvaluation(HandleFor(group), phase, _kind, result, comboProtect);
+        foreach (var listener in Dispatch.Instances<IChallengeListener>())
+            listener.OnPreBossEvaluated(ref evaluation, ref cancel);
+
+        result = evaluation.Result;
+        comboProtect = evaluation.ComboProtect;
+        return evaluation;
+    }
+
+    /// <summary>
+    /// The evaluation callback behind <paramref name="evaluation"/> ran, and <paramref name="result"/> and
+    /// <paramref name="comboProtect"/> are the values it ended at - the game's own verdict where its callback
+    /// overrode what it was handed. <paramref name="ran"/> false - a listener cancelled the callback - drops
+    /// the report, because the callback the report is about did not run.
+    /// </summary>
+    internal void BossEvaluated(
+        in ChallengeBossEvaluation evaluation,
+        ChallengeEvaluationResult result,
+        bool comboProtect,
+        bool ran)
+    {
+        if (!_running || !ran)
+            return;
+        var final = evaluation with { Result = result, ComboProtect = comboProtect };
+        Dispatch.Run<IChallengeListener>(listener => listener.OnBossEvaluated(final));
     }
 
     /// <summary>

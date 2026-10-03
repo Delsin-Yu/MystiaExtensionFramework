@@ -69,6 +69,11 @@ internal sealed class CommonServices : ICommonServices
 
     public IAssetLocator Locator => AssetLocator.Shared;
 
+    // The map builder belongs to the day scene path, but what a mod does with it - describing a map while the
+    // databases are collected and publishing it after they initialized - is not scene scoped, so it sits with
+    // the assets rather than behind a scene loop.
+    public IDayMapBuilder MapBuilder => AssetDayMapBuilder.Shared;
+
     public void OpenDialog(DialogPackage dialog, Action onFinished)
     {
         UniversalGameManager.OpenDialogMenu(dialog, onFinished);

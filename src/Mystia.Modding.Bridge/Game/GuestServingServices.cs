@@ -19,7 +19,7 @@ namespace Mystia.Modding.Bridge;
 /// contract speaks handles and proxies (see <see cref="EntitySeams"/>), and a stale handle is refused instead of
 /// reaching a controller the game destroyed.
 /// </summary>
-internal sealed class WorkSceneGuestServing : IWorkSceneGuests
+internal sealed class WorkSceneGuestServing : IWorkSceneGuests, IWorkSceneDishes
 {
     /// <summary>The instance the work scene services hand out as <c>Guests</c>.</summary>
     internal static readonly WorkSceneGuestServing Shared = new();
@@ -273,6 +273,12 @@ internal sealed class WorkSceneGuestServing : IWorkSceneGuests
                 break;
         }
     }
+
+    #endregion
+
+    #region The dish boundary
+
+    public DishProxy? DishOf(Sellable dish) => DishDirectory.ProxyOf(dish);
 
     #endregion
 

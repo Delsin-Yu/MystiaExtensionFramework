@@ -38,6 +38,12 @@ public interface IWorkSceneServices
 
     IWorkSceneStorage Storage { get; }
 
+    /// <summary>
+    /// The dish boundary of the running work scene (see <see cref="IWorkSceneDishes"/>): the one place where a
+    /// dish a mod holds as the game's own sellable becomes the framework's own dish.
+    /// </summary>
+    IWorkSceneDishes Dishes => throw new NotSupportedException();
+
     IWorkSceneTray Tray { get; }
 
     IWorkSceneTime Time { get; }
@@ -188,6 +194,30 @@ public interface IWorkSceneGuests
 
     /// <summary>Whether both the dish and the beverage of an order have been served.</summary>
     bool IsOrderFullfilled(OrderHandle order) => throw new NotSupportedException();
+}
+
+/// <summary>
+/// The dish boundary of the running work scene.
+/// <para>
+/// A dish reaches a mod as the game's own sellable on the paths that still speak it — the cook, tray and
+/// storage members, and the dish a serve listener is handed — while everything a mod reads or writes for a
+/// guest or an order speaks the framework's <see cref="DishProxy"/>. This is where the first becomes the
+/// second: without it a mod holding a dish the game handed it could not put that dish on an order slot or a
+/// panel.
+/// </para>
+/// <para>
+/// It names the game's sellable on purpose and it is the only contract in the entity layer that does. The
+/// members behind it are the ones still to be migrated; each of them that starts handing a
+/// <see cref="DishProxy"/> removes one reason for this interface to exist.
+/// </para>
+/// </summary>
+public interface IWorkSceneDishes
+{
+    /// <summary>
+    /// The projection of a dish the caller holds, or null when the object is not a dish of the running session.
+    /// </summary>
+    /// <param name="dish">The dish the game's own members handed out.</param>
+    DishProxy? DishOf(Sellable dish) => throw new NotSupportedException();
 }
 
 public interface IWorkSceneCook

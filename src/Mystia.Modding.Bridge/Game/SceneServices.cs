@@ -374,6 +374,8 @@ internal sealed class WorkSceneServices : IWorkSceneServices
 
     public IWorkSceneStorage Storage { get; } = new StorageServices();
 
+    public IWorkSceneDishes Dishes { get; } = WorkSceneGuestServing.Shared;
+
     public IWorkSceneTray Tray { get; } = new TrayServices();
 
     public IWorkSceneTime Time { get; } = WorkSceneTimeServices.Shared;

@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
 using HarmonyLib.Public.Patching;
@@ -85,7 +85,7 @@ internal static class GameBridgeHook
         }
     }
 
-    private static void Trace(string message)
+    internal static void Trace(string message)
     {
         try
         {
@@ -118,6 +118,22 @@ internal sealed class MainThreadPump : UnityEngine.MonoBehaviour
     private void Update()
     {
         BridgeInstaller.MainThread?.Drain();
+        CoroutinePump.Tick(UnityEngine.Time.deltaTime);
+        GlobalHost.Tick(UnityEngine.Time.deltaTime);
         SceneLoopHost.Tick(UnityEngine.Time.deltaTime);
+    }
+
+    private void FixedUpdate()
+    {
+        CoroutinePump.FixedTick(UnityEngine.Time.fixedDeltaTime);
+        GlobalHost.FixedTick(UnityEngine.Time.fixedDeltaTime);
+    }
+
+    private void OnGUI() => GlobalHost.DrawGui();
+
+    private void OnDestroy()
+    {
+        GlobalHost.Shutdown();
+        CoroutinePump.Drain();
     }
 }

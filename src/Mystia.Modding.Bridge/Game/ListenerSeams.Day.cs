@@ -1,0 +1,83 @@
+using HarmonyLib;
+using Mystia.Listeners;
+using NightScene.GuestManagementUtility;
+using UnityEngine;
+
+namespace Mystia.Modding.Bridge;
+
+internal static class DayListenerSeams
+{
+    [HarmonyPatch(typeof(DayScene.SceneManager), nameof(DayScene.SceneManager.OnFirstEnterDaySceneFinish))]
+    private static class FirstEnterFinished
+    {
+        // Distinct from IDayListener.OnDayMapEntered, which fires on every map swap.
+        private static void Postfix() => Dispatch.Run<IDayListener>(listener => listener.OnDayFirstEntered());
+    }
+}
+
+internal static class DayInputListenerSeams
+{
+    [HarmonyPatch(
+        typeof(Common.CharacterUtility.CharacterControllerInputGeneratorComponent),
+        nameof(Common.CharacterUtility.CharacterControllerInputGeneratorComponent.UpdateInputDirection)
+    )]
+    private static class Move
+    {
+        // The component drives the character it holds, so the notification carries that character.
+        // Same method also carries InputHolds.Move, which zeroes the direction when movement is off.
+        private static void Postfix(
+            Common.CharacterUtility.CharacterControllerInputGeneratorComponent __instance,
+            Vector2 inputDirection
+        ) =>
+            Dispatch.Run<IDayInputListener>(listener => listener.OnMoveInput(__instance.Character, inputDirection));
+    }
+}
+
+internal static class GuestGroupListenerSeams
+{
+    // The order generation result lives in a local of GenerateOrderSession's closure local function:
+    // GenerateOrderSession returns void and GuestGroupController.GenerateOrder only sees the order,
+    // so no public member exposes it. The interop keeps compiler-generated names verbatim
+    // (InteropGen sets PassthroughNames), which C# cannot spell, so that closure is addressed by
+    // name only. If the interop is regenerated with sanitized names, this patch stops resolving
+    // and lands in host.log instead of dispatching.
+    private const string OrderSessionType = "NightScene.GuestManagementUtility.GuestsManager+<>c__DisplayClass174_0";
+    private const string OrderSessionMethod = "<GenerateOrderSession>g__GenerateOrderInternal|1";
+
+    [HarmonyPatch(OrderSessionType, OrderSessionMethod)]
+    private static class OrderGenerated
+    {
+        private static void Postfix(
+            GuestGroupController toGenerate,
+            GuestsManager.OrderGenerationResult __result,
+            ref GuestsManager.OrderBase orderData
+        )
+        {
+            foreach (var listener in Dispatch.Instances<IGuestGroupListener>())
+                listener.OnGroupOrderGenerated(toGenerate, __result, ref orderData);
+        }
+    }
+
+    [HarmonyPatch(typeof(GuestGroupController), nameof(GuestGroupController.RefreshCurrentFundAndOrder))]
+    private static class Arrived
+    {
+        private static void Postfix(GuestGroupController __instance) =>
+            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupArrived(__instance));
+    }
+
+    [HarmonyPatch(typeof(GuestGroupController), nameof(GuestGroupController.MoveToDesk))]
+    private static class MovingToDesk
+    {
+        // Same method also carries SeatSeams.Move, which rewrites the seat and skips the original
+        // when a seat choice is pending.
+        private static void Prefix(GuestGroupController __instance, int deskCode) =>
+            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupMovingToDesk(__instance, deskCode));
+    }
+
+    [HarmonyPatch(typeof(GuestGroupController), nameof(GuestGroupController.MoveToQueue))]
+    private static class Queued
+    {
+        private static void Postfix(GuestGroupController __instance) =>
+            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupQueued(__instance));
+    }
+}

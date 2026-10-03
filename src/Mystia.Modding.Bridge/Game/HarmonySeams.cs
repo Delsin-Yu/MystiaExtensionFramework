@@ -130,7 +130,8 @@ internal static class SceneSeams
             return false;
         }
 
-        private static void Postfix() => Dispatch.Run<IDayListener>(listener => listener.OnDialogOpened());
+        private static void Postfix(DialogPackage dialogPackage) =>
+            Dispatch.Run<IDayListener>(listener => listener.OnDialogOpened(dialogPackage));
     }
 
     [HarmonyPatch(typeof(UniversalGameManager), nameof(UniversalGameManager.OpenDialogMenuWithExitCode))]
@@ -223,7 +224,8 @@ internal static class PrepSeams
         private static void Postfix(IzakayaSelectorPanel_New __instance)
         {
             PrepPanels.Map = __instance;
-            Dispatch.Run<IPrepListener>(listener => listener.OnGuideMapConfirmed(__instance));
+            var view = PanelViewCache.GuideMap(__instance);
+            Dispatch.Run<IPrepListener>(listener => listener.OnGuideMapConfirmed(view));
         }
     }
 
@@ -233,7 +235,8 @@ internal static class PrepSeams
         private static void Postfix(IzakayaSelectorPanel_New __instance)
         {
             PrepPanels.Map = __instance;
-            Dispatch.Run<IPrepListener>(listener => listener.OnGuideSpotSelected(__instance));
+            var view = PanelViewCache.GuideMap(__instance);
+            Dispatch.Run<IPrepListener>(listener => listener.OnGuideSpotSelected(view));
         }
     }
 
@@ -243,7 +246,8 @@ internal static class PrepSeams
         private static void Postfix(IzakayaConfigPannel __instance)
         {
             PrepPanels.Config = __instance;
-            Dispatch.Run<IPrepListener>(listener => listener.OnPrepConfirmed(__instance));
+            var view = PanelViewCache.PrepConfig(__instance);
+            Dispatch.Run<IPrepListener>(listener => listener.OnPrepConfirmed(view));
         }
     }
 
@@ -297,13 +301,33 @@ internal static class PrepPanelCache
     [HarmonyPatch(typeof(IzakayaSelectorPanel_New), "OnGuideMapInitialize")]
     private static class MapOpen
     {
-        private static void Postfix(IzakayaSelectorPanel_New __instance) => PrepPanels.Map = __instance;
+        private static void Postfix(IzakayaSelectorPanel_New __instance)
+        {
+            PrepPanels.Map = __instance;
+            PanelViewCache.DropGuideMap(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(IzakayaSelectorPanel_New), nameof(IzakayaSelectorPanel_New.OnGuideMapClose))]
+    private static class MapClose
+    {
+        private static void Postfix(IzakayaSelectorPanel_New __instance) => PanelViewCache.DropGuideMap(__instance);
     }
 
     [HarmonyPatch(typeof(IzakayaConfigPannel), "OnPanelOpen")]
     private static class ConfigOpen
     {
-        private static void Postfix(IzakayaConfigPannel __instance) => PrepPanels.Config = __instance;
+        private static void Postfix(IzakayaConfigPannel __instance)
+        {
+            PrepPanels.Config = __instance;
+            PanelViewCache.DropPrepConfig(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(IzakayaConfigPannel), nameof(IzakayaConfigPannel.OnPanelClose))]
+    private static class ConfigClose
+    {
+        private static void Postfix(IzakayaConfigPannel __instance) => PanelViewCache.DropPrepConfig(__instance);
     }
 }
 
@@ -312,22 +336,32 @@ internal static class WorkSeams
     [HarmonyPatch(typeof(WorkSceneServePannel), "OnPanelClose")]
     private static class ServeFinished
     {
-        private static void Postfix(WorkSceneServePannel __instance) =>
-            Dispatch.Run<IWorkListener>(listener => listener.OnServeFinished(__instance));
+        private static void Postfix(WorkSceneServePannel __instance)
+        {
+            var view = PanelViewCache.Serve(__instance);
+            Dispatch.Run<IWorkListener>(listener => listener.OnServeFinished(view));
+            PanelViewCache.DropServe(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(WorkSceneServePannel), "InvokeOrderUpdate")]
     private static class Orders
     {
-        private static void Postfix(WorkSceneServePannel __instance) =>
-            Dispatch.Run<IWorkListener>(listener => listener.OnOrdersRefreshed(__instance));
+        private static void Postfix(WorkSceneServePannel __instance)
+        {
+            var view = PanelViewCache.Serve(__instance);
+            Dispatch.Run<IWorkListener>(listener => listener.OnOrdersRefreshed(view));
+        }
     }
 
     [HarmonyPatch(typeof(WorkSceneServePannel), "Send")]
     private static class Dish
     {
-        private static void Postfix(WorkSceneServePannel __instance, Sellable toSend) =>
-            Dispatch.Run<IWorkListener>(listener => listener.OnDishSent(__instance, toSend));
+        private static void Postfix(WorkSceneServePannel __instance, Sellable toSend)
+        {
+            var view = PanelViewCache.Serve(__instance);
+            Dispatch.Run<IWorkListener>(listener => listener.OnDishSent(view, toSend));
+        }
     }
 
     [HarmonyPatch(typeof(WorkSceneStoragePannel), "Extract")]
@@ -361,13 +395,6 @@ internal static class DayInputSeams
             Dispatch.Run<IDayInputListener>(listener => listener.OnCharacterReady(__instance));
     }
 
-    [HarmonyPatch(typeof(CharacterControllerInputGeneratorComponent), nameof(CharacterControllerInputGeneratorComponent.UpdateInputDirection))]
-    private static class Move
-    {
-        private static void Postfix(Vector2 inputDirection) =>
-            Dispatch.Run<IDayInputListener>(listener => listener.OnMoveInput(inputDirection));
-    }
-
     [HarmonyPatch(typeof(DayScenePlayerInputGenerator), nameof(DayScenePlayerInputGenerator.OnSprintPerformed))]
     private static class Sprint
     {
@@ -394,7 +421,7 @@ internal static class GuestSeams
     {
         private static bool Prefix(GuestGroupController initializedController)
         {
-            var driver = GuestPipeline.NotifySpawned(initializedController);
+            var driver = GuestPipeline.NotifySpawned(initializedController, SpawnRequestHold.Take());
             if (driver is null)
                 return true;
             driver.Start(new GuestControls(initializedController));
@@ -456,32 +483,81 @@ internal static class GuestSeams
             GuestPipeline.InsertEvaluationOverride(instructions);
     }
 
+    // Every leave seam takes the leave gate itself and pairs LeaveDispatch.Enter/Exit through __state: the
+    // gate decides whether the original runs, the count decides whether this seam is the outermost leave of
+    // the leave in progress and therefore the one that reports it. Report and count stay together, a gated
+    // seam neither enters nor exits, and the finalizer restores the count when the original throws, because
+    // HarmonyX skips the postfix then.
     [HarmonyPatch(typeof(GuestsManager), nameof(GuestsManager.PayAndLeave))]
     private static class Paid
     {
-        private static void Postfix(GuestGroupController toPayAndLeave) =>
-            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toPayAndLeave, GuestLeaveKind.Paid));
+        private static bool Prefix(out int __state)
+        {
+            __state = LeaveDispatch.Enter(StockGate.Allow(StockGate.Leave));
+            return __state != LeaveDispatch.Skipped;
+        }
+
+        private static void Postfix(GuestGroupController toPayAndLeave, int __state)
+        {
+            if (LeaveDispatch.Exit(__state))
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toPayAndLeave, GuestLeaveKind.Paid));
+        }
+
+        private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
     }
 
     [HarmonyPatch(typeof(GuestsManager), "ExBadLeave")]
     private static class ExBad
     {
-        private static void Postfix(GuestGroupController toExBadLeave) =>
-            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toExBadLeave, GuestLeaveKind.ExBad));
+        private static bool Prefix(out int __state)
+        {
+            __state = LeaveDispatch.Enter(StockGate.Allow(StockGate.Leave));
+            return __state != LeaveDispatch.Skipped;
+        }
+
+        private static void Postfix(GuestGroupController toExBadLeave, int __state)
+        {
+            if (LeaveDispatch.Exit(__state))
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toExBadLeave, GuestLeaveKind.ExBad));
+        }
+
+        private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
     }
 
     [HarmonyPatch(typeof(GuestsManager), nameof(GuestsManager.RepellAndLeavePay))]
     private static class RepelledPaid
     {
-        private static void Postfix(GuestGroupController toRepell) =>
-            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toRepell, GuestLeaveKind.RepelledPaid));
+        private static bool Prefix(out int __state)
+        {
+            __state = LeaveDispatch.Enter(StockGate.Allow(StockGate.Leave));
+            return __state != LeaveDispatch.Skipped;
+        }
+
+        private static void Postfix(GuestGroupController toRepell, int __state)
+        {
+            if (LeaveDispatch.Exit(__state))
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toRepell, GuestLeaveKind.RepelledPaid));
+        }
+
+        private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
     }
 
     [HarmonyPatch(typeof(GuestsManager), nameof(GuestsManager.RepellAndLeaveNoPay))]
     private static class RepelledUnpaid
     {
-        private static void Postfix(GuestGroupController toRepell) =>
-            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toRepell, GuestLeaveKind.RepelledUnpaid));
+        private static bool Prefix(out int __state)
+        {
+            __state = LeaveDispatch.Enter(StockGate.Allow(StockGate.Leave));
+            return __state != LeaveDispatch.Skipped;
+        }
+
+        private static void Postfix(GuestGroupController toRepell, int __state)
+        {
+            if (LeaveDispatch.Exit(__state))
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toRepell, GuestLeaveKind.RepelledUnpaid));
+        }
+
+        private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
     }
 
     [HarmonyPatch(typeof(GuestsManager), nameof(GuestsManager.PlayerRepell))]
@@ -489,23 +565,41 @@ internal static class GuestSeams
     {
         private static GuestGroupController? _repelled;
 
-        private static void Prefix(GuestsManager __instance, int deskCode) =>
+        private static bool Prefix(GuestsManager __instance, int deskCode, out int __state)
+        {
             _repelled = __instance.GetInDeskGuest(deskCode);
+            __state = LeaveDispatch.Enter(StockGate.Allow(StockGate.Leave));
+            return __state != LeaveDispatch.Skipped;
+        }
 
-        private static void Postfix()
+        private static void Postfix(int __state)
         {
             var group = _repelled;
             _repelled = null;
-            if (group is not null)
+            var report = LeaveDispatch.Exit(__state);
+            if (report && group is not null)
                 Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(group, GuestLeaveKind.PlayerRepelled));
         }
+
+        private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
     }
 
     [HarmonyPatch(typeof(GuestsManager), "PatientDepletedLeave")]
     private static class Patience
     {
-        private static void Postfix(GuestGroupController toPatientDepletedLeave) =>
-            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toPatientDepletedLeave, GuestLeaveKind.Patience));
+        private static bool Prefix(out int __state)
+        {
+            __state = LeaveDispatch.Enter(StockGate.Allow(StockGate.Leave));
+            return __state != LeaveDispatch.Skipped;
+        }
+
+        private static void Postfix(GuestGroupController toPatientDepletedLeave, int __state)
+        {
+            if (LeaveDispatch.Exit(__state))
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toPatientDepletedLeave, GuestLeaveKind.Patience));
+        }
+
+        private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
     }
 
     [HarmonyPatch(typeof(GuestsManager), nameof(GuestsManager.TryCloseIzakaya))]

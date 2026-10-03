@@ -5,14 +5,14 @@ using DayScene.Input;
 using GameData.Core.Collections;
 using GameData.Core.Collections.NightSceneUtility;
 using GameData.Profile;
+using GameData.RunTime.NightSceneUtility;
 using NightScene.CookingUtility;
 using NightScene.GuestManagementUtility;
 using NightScene.UI.CookingUtility;
-using NightScene.UI.GuestManagementUtility;
-using PrepNightScene.UI;
 using UnityEngine;
 
 using Mystia;
+using Mystia.Scenes;
 
 namespace Mystia.Listeners;
 
@@ -21,9 +21,11 @@ public interface IDayListener
 {
     void OnDayMapEntered() { }
 
+    void OnDayFirstEntered() { }
+
     void OnDayEnded() { }
 
-    void OnDialogOpened() { }
+    void OnDialogOpened(DialogPackage package) { }
 
     void OnSceneChanging(Scene scene) { }
 }
@@ -33,7 +35,7 @@ public interface IDayInputListener
 {
     void OnCharacterReady(CharacterControllerUnit unit) { }
 
-    void OnMoveInput(Vector2 direction) { }
+    void OnMoveInput(CharacterControllerUnit unit, Vector2 direction) { }
 
     void OnSprintStarted() { }
 
@@ -45,6 +47,10 @@ public interface IDayInputListener
 [AutoWire]
 public interface ICookListener
 {
+    void OnPreCookStarted(CookController controller, ref Sellable result, ref Recipe recipe, ref bool cancelInvocation) { }
+
+    void OnPreCookCountdownStarted(CookController controller, ref float qteScore, ref bool cancelInvocation) { }
+
     void OnCookStarted(CookController controller, Sellable result, Recipe recipe, bool couldReturnIngredients) { }
 
     void OnCookExtracted(CookController controller) { }
@@ -57,11 +63,21 @@ public interface ICookListener
 [AutoWire]
 public interface IPrepListener
 {
-    void OnGuideMapConfirmed(IzakayaSelectorPanel_New panel) { }
+    void OnPreRecipeAdded(int id, ref bool cancelInvocation) { }
 
-    void OnGuideSpotSelected(IzakayaSelectorPanel_New panel) { }
+    void OnPreBeverageAdded(int id, ref bool cancelInvocation) { }
 
-    void OnPrepConfirmed(IzakayaConfigPannel panel) { }
+    void OnPreCookerAssigned(int id, int index, ref bool cancelInvocation) { }
+
+    void OnGuideMapConfirmed(GuideMapView view);
+
+    void OnGuideSpotSelected(GuideMapView view) { }
+
+    void OnPrepConfirmed(PrepConfigView view);
+
+    void OnConfigTabSelected(PrepConfigView view);
+
+    void OnConfigureUpdated(IzakayaConfigure configure) { }
 
     void OnRecipeAdded(int id) { }
 
@@ -81,11 +97,23 @@ public interface IPrepListener
 [AutoWire]
 public interface IWorkListener
 {
-    void OnServeFinished(WorkSceneServePannel panel) { }
+    void OnServePanelOpened(ServePannelView view);
 
-    void OnOrdersRefreshed(WorkSceneServePannel panel) { }
+    void OnPreServePanelClosed(ServePannelView view, ref bool cancelInvocation);
 
-    void OnDishSent(WorkSceneServePannel panel, Sellable dish) { }
+    void OnPreDishServed(ServePannelView view, ref Sellable dish, ref bool cancelInvocation);
+
+    void OnPreDishCancelled(ServePannelView view, ref Sellable dish, ref bool cancelInvocation);
+
+    void OnPreStorageExtracted(ref Sellable sellable, ref bool cancelInvocation);
+
+    void OnPreTimeModeSet(GameTimeManager manager, ref GameTimeManager.TimeMode mode, ref bool cancelInvocation);
+
+    void OnServeFinished(ServePannelView view) { }
+
+    void OnOrdersRefreshed(ServePannelView view) { }
+
+    void OnDishSent(ServePannelView view, Sellable dish) { }
 
     void OnStorageExtracted(Sellable sellable) { }
 
@@ -105,20 +133,56 @@ public enum GuestLeaveKind
     Other,
 }
 
+/// <summary>
+/// The spawn parameters of the guest group being created, filled from the arguments the game is about to use.
+/// The five argument <c>SpawnNormalGuestGroup</c> overload and <c>SpawnSpecialGuestGroup</c> write a rewritten
+/// request back into their arguments; the parameterless <c>SpawnNormalGuestGroup</c> only forwards to the five
+/// argument overload, so a rewrite made for it cannot be applied and is dropped there.
+/// </summary>
+public record struct GuestSpawnRequest
+{
+    public Vector3? SpawnPosition;
+
+    public GuestGroupController.LeaveType LeaveType;
+
+    public int DeskCode;
+
+    public bool Fade;
+}
+
 [AutoWire]
 public interface IGuestGroupListener
 {
-    void OnGroupSpawned(GuestGroupController group) { }
+    void OnGroupSpawned(GuestGroupController group, GuestSpawnRequest request) { }
 
     void OnGroupSeated(GuestGroupController group, int desk) { }
 
     void OnGroupOrdered(GuestGroupController group, ref GuestsManager.OrderBase order, ref string message) { }
 
+    void OnGroupOrderGenerated(GuestGroupController group, GuestsManager.OrderGenerationResult result, ref GuestsManager.OrderBase order) { }
+
     void OnGroupEvaluated(GuestGroupController group, ref GuestGroupController.EvaluationResult result) { }
+
+    /// <summary>The evaluation of a group was resolved and applied; fired after the game finished it.</summary>
+    void OnGroupPostEvaluated(GuestGroupController group, GuestGroupController.EvaluationResult result) { }
+
+    void OnGroupArrived(GuestGroupController group) { }
+
+    void OnGroupMovingToDesk(GuestGroupController group, int desk) { }
+
+    void OnGroupQueued(GuestGroupController group) { }
+
+    void OnPrePlayerRepel(int deskCode, ref bool cancelInvocation) { }
 
     void OnGroupLeft(GuestGroupController group, GuestLeaveKind kind) { }
 
     void OnIzakayaClosing() { }
+}
+
+[AutoWire]
+public interface IPortraitProvider
+{
+    bool TryResolvePortrait(ClothesProfile.Clothes clothes, out Sprite sprite);
 }
 
 [AutoWire]

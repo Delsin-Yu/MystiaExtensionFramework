@@ -84,7 +84,9 @@ public sealed class HostAndGuardTests
     private sealed class SpawnListener(Action seen)
         : IGuestGroupListener
     {
-        public void OnGroupSpawned(NightScene.GuestManagementUtility.GuestGroupController group) => seen();
+        public void OnGroupSpawned(
+            NightScene.GuestManagementUtility.GuestGroupController group,
+            GuestSpawnRequest request) => seen();
     }
 
     private sealed class ClaimingDirector : IGuestDirector

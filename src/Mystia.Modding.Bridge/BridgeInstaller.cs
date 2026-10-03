@@ -1,4 +1,4 @@
-using Mystia;
+﻿using Mystia;
 
 namespace Mystia.Modding.Bridge;
 
@@ -61,6 +61,7 @@ internal static class BridgeInstaller
     {
         MainThread = mainThread;
         components.Bind(mainThread);
+        CoroutinePump.SetLogSink(GameBridgeHook.Trace);
         GamePatches.TryInstall(gameRoot);
     }
 

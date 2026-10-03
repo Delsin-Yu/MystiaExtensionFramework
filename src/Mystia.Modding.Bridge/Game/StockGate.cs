@@ -1,4 +1,4 @@
-using Mystia.Scenes;
+﻿using Mystia.Scenes;
 
 namespace Mystia.Modding.Bridge;
 
@@ -21,6 +21,16 @@ internal static class StockGate
     internal static bool Order = true;
 
     internal static bool ServeClose = true;
+
+    internal static bool Seating = true;
+
+    internal static bool CookCall = true;
+
+    internal static bool IzakayaClose = true;
+
+    internal static bool PrepComplete = true;
+
+    internal static bool Evaluation = true;
 
     [ThreadStatic]
     private static int _bypass;
@@ -53,11 +63,16 @@ internal static class StockGate
                 break;
             case SceneId.PrepNight:
                 MapConfirm = true;
+                PrepComplete = true;
                 break;
             case SceneId.Night:
                 Leave = true;
                 Order = true;
                 ServeClose = true;
+                Seating = true;
+                CookCall = true;
+                IzakayaClose = true;
+                Evaluation = true;
                 break;
         }
     }

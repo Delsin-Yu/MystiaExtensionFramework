@@ -1,15 +1,16 @@
-namespace Mystia.Modding.Bridge;
+﻿namespace Mystia.Modding.Bridge;
 
+/// <summary>Which mod contributed an entry: every injected row is tagged with the owner's own id.</summary>
 internal static class ContentOrigin
 {
-    private static readonly Dictionary<object, string> Roots = new(ReferenceEqualityComparer.Instance);
+    private static readonly Dictionary<object, string> Origins = new(ReferenceEqualityComparer.Instance);
 
-    internal static void Bind(object contributor, string directory)
+    internal static void Bind(object contributor, string origin)
     {
-        if (!string.IsNullOrEmpty(directory))
-            Roots[contributor] = directory;
+        if (!string.IsNullOrEmpty(origin))
+            Origins[contributor] = origin;
     }
 
     internal static string Of(object contributor) =>
-        Roots.TryGetValue(contributor, out var root) ? root : "";
+        Origins.TryGetValue(contributor, out var origin) ? origin : "";
 }

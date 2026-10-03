@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Common;
 using Common.DialogUtility;
 using GameData.Core.Collections;
@@ -8,12 +8,14 @@ using GameData.Core.Collections.DaySceneUtility.Collections;
 using GameData.Core.Collections.NightSceneUtility;
 using GameData.CoreLanguage;
 using GameData.Profile;
+using GameData.Profile.SchedulerNodeCollection;
 using HarmonyLib;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Mystia.Data;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
 
 namespace Mystia.Modding.Bridge;
 
@@ -90,6 +92,223 @@ internal static class GameRecords
 
     internal static ObjectLanguageBase ItemText(ItemData data, string root) =>
         Text(data.Name, data.Description, data.Picture, root);
+
+    internal static Item ClothItem(ClothesData data) => new(data.Id);
+
+    internal static ObjectLanguageBase ClothText(ClothesData data, string root) =>
+        Text(data.Name, data.Description, data.Picture, root);
+
+    // Clothes reuse the stock profile's visual asset reference: the runtime portrait comes from
+    // IPortraitProvider, so the addressable override the stock entry points at is never loaded.
+    internal static ClothesProfile.Clothes Cloth(ClothesData data, int skinIndex, ClothesProfile.Clothes template)
+    {
+        var profile = new ClothesProfile.Clothes();
+        profile.index = data.Id;
+        profile.frameTime = 0f;
+        profile.izakayaSkinIndex = data.IzakayaSkinIndex;
+        profile.izkayaHorizontalOffset = data.IzkayaHorizontalOffset;
+        profile.m_OverrideVisualAsset = template.m_OverrideVisualAsset;
+        profile.notebookHorizontalOffset = data.NotebookHorizontalOffset;
+        profile.notebookVerticalOffset = data.NotebookVerticalOffset;
+        profile.notebookUITitleOffset = new Vector2(data.NotebookTitleHorizontalOffset, data.NotebookTitleVerticalOffset);
+        var selection = new CharacterSkinSets.SkinSelectionInfo();
+        selection.selectedType = CharacterSkinSets.SelectedType.DLC;
+        selection.index = skinIndex;
+        profile.skinIndex = selection;
+        return profile;
+    }
+
+    internal static CharacterSpriteSetCompact CompactPixel(string[]? body, string[]? eyes, string root)
+    {
+        var fallback = DataBaseCharacter.FallbackCompactPixel;
+        if (body is not { Length: > 0 } && eyes is not { Length: > 0 })
+            return fallback ?? EmptyPixel();
+
+        var pixel = ScriptableObject.CreateInstance<CharacterSpriteSetCompact>();
+        var main = body is { Length: > 0 } ? AsRefs(Load(body, root)) : fallback?.MainSprite ?? AsRefs([]);
+        var eye = eyes is { Length: > 0 } ? AsRefs(Load(eyes, root)) : fallback?.EyeSprite ?? AsRefs([]);
+        if (fallback is null)
+            pixel.Initialize(main, true, eye, false, 1f, 0f, false, 0f, false, 1f, new Il2CppReferenceArray<CharacterSpriteSetCompact.RemovableTrimProperty>(0), AsRefs([]), AsRefs([]), 0f, 0f);
+        else
+            pixel.Initialize(main, fallback.DoNotUseEyeSprite, eye, fallback.HasPrebakedShadow, fallback.AnimationSpeedMultiplier, fallback.ExtraYOffset, fallback.IsHina, fallback.RotatePerTime, fallback.DoNotHaveStepVFX, fallback.MoveSpeedMultiplier, fallback.RemovableTrims, fallback.TrimSpritesDisplayFront, fallback.TrimSpritesDisplayBack, fallback.TrimFrontSpriteFrameSpeed, fallback.TrimBackSpriteFrameSpeed);
+        pixel.hideFlags = HideFlags.HideAndDontSave;
+        return pixel;
+    }
+
+    internal static Il2CppReferenceArray<LanguageBase> SpellLanguage(SpellData data)
+    {
+        var language = new Il2CppReferenceArray<LanguageBase>(2);
+        language[0] = new LanguageBase(data.Name ?? "", data.Description ?? "");
+        language[1] = new LanguageBase(data.NegativeName ?? "", data.NegativeDescription ?? "");
+        return language;
+    }
+
+    internal static ObjectLanguageBase BuffText(BuffData data, string root) =>
+        Text(data.Name, data.Description, data.Picture, root);
+
+    internal static SchedulerNode.Reward Reward(SchedulerRewardData data)
+    {
+        var reward = new SchedulerNode.Reward();
+        reward.rewardType = (SchedulerNode.Reward.RewardType)data.RewardType;
+        reward.rewardId = data.RewardId ?? "";
+        if (data.ObjectType.HasValue)
+            reward.objectType = (SchedulerNode.Reward.ObjectType)data.ObjectType.Value;
+        reward.rewardIntArray = Ints(data.RewardIntArray);
+        return reward;
+    }
+
+    internal static MissionNode.FinishCondition FinishCondition(MissionFinishConditionData data)
+    {
+        var condition = new MissionNode.FinishCondition();
+        condition.conditionType = (MissionNode.FinishCondition.ConditionType)data.ConditionType;
+        condition.label = data.Label ?? "";
+        condition.amount = data.Amount ?? 0;
+        condition.tag = data.Tag ?? 0;
+        condition.tags = Ints(data.Tags);
+        if (data.SellableType.HasValue)
+            condition.sellableType = (Sellable.SellableType)data.SellableType.Value;
+        var product = new Product();
+        product.productType = (Product.ProductType)(data.ProductType ?? 0);
+        product.productId = data.ProductId ?? 0;
+        product.productAmount = data.ProductAmount ?? 0;
+        product.productLabel = "";
+        condition.product = product;
+        return condition;
+    }
+
+    internal static SchedulerNode.Trigger Trigger(SchedulerTriggerData? data)
+    {
+        var trigger = new SchedulerNode.Trigger();
+        if (data is not { } source)
+            return trigger;
+        trigger.triggerType = (SchedulerNode.Trigger.TriggerType)source.TriggerType;
+        trigger.triggerId = source.TriggerId ?? "";
+        trigger.labels = Strings([]);
+        if (source.Time is { } time)
+            trigger.time = Day(time);
+        return trigger;
+    }
+
+    internal static SchedulerNode.Day Day(SchedulerDayData data)
+    {
+        var day = new SchedulerNode.Day();
+        day.dayType = (SchedulerNode.Day.DayType)data.DayType;
+        day.dayCalcType = (SchedulerNode.Day.CalculateType)data.CalcType;
+        day.day = data.Day;
+        day.dayRange = new Vector2Int(data.DayRangeMin, data.DayRangeMax);
+        return day;
+    }
+
+    internal static SchedulerNode.Event Event(SchedulerEventData? data, Func<string, DialogPackage?> find)
+    {
+        var scheduled = new SchedulerNode.Event();
+        if (data is not { } source)
+            return scheduled;
+        scheduled.eventType = (SchedulerNode.Event.EventType)source.EventType;
+        if (!string.IsNullOrEmpty(source.DialogPackage))
+            scheduled.runtimeDialogPackage = find(source.DialogPackage);
+        return scheduled;
+    }
+
+    internal static MissionNode MissionNodeRecord(MissionNodeData data, Func<string, DialogPackage?> find)
+    {
+        var node = ScriptableObject.CreateInstance<MissionNode>();
+        node.name = data.Label ?? "";
+        node.label = data.Label ?? "";
+        node.debugLabel = data.DebugLabel ?? data.Label ?? "";
+        node.missionType = (SchedulerNode.SchedulerType)data.MissionType;
+        node.isTimedMission = data.IsTimedMission;
+        node.missionFailedAction = (MissionNode.MissionFailedAction)data.MissionFailedAction;
+        node.hasSender = !string.IsNullOrEmpty(data.Sender);
+        node.sender = data.Sender ?? "";
+        node.hasReciever = !string.IsNullOrEmpty(data.Receiver);
+        node.reciever = data.Receiver ?? "";
+        node.missionTimeLimit = Trigger(data.MissionTimeLimit);
+        node.missionFinishEvent = Event(data.MissionFinishEvent, find);
+        node.missionFailedEvent = Event(data.MissionFailedEvent, find);
+        node.rewards = Rewards(data.Rewards);
+        node.postRewards = Rewards(data.PostRewards);
+        node.finishCondition = Conditions(data.FinishConditions);
+        node.preNodes = Strings(data.PreNodes);
+        node.postMissions = Strings(data.PostMissions);
+        node.postMissionsAfterPerformance = Strings(data.PostMissionsAfterPerformance);
+        node.postEvents = Strings(data.PostEvents);
+        node.hideFlags = HideFlags.HideAndDontSave;
+        return node;
+    }
+
+    internal static EventNode EventNodeRecord(EventNodeData data, Func<string, DialogPackage?> find)
+    {
+        var node = ScriptableObject.CreateInstance<EventNode>();
+        node.name = data.Label ?? "";
+        node.label = data.Label ?? "";
+        node.debugLabel = data.DebugLabel ?? data.Label ?? "";
+        var scheduled = new SchedulerNode.ScheduledEvent();
+        scheduled.trigger = Trigger(data.Trigger);
+        scheduled.eventData = Event(data.ScheduledEvent, find);
+        node.scheduledEvent = scheduled;
+        node.rewards = Rewards(data.Rewards);
+        node.postRewards = Rewards(data.PostRewards);
+        node.preNodes = Strings(data.PreNodes);
+        node.postMissions = Strings(data.PostMissions);
+        node.postMissionsAfterPerformance = Strings(data.PostMissionsAfterPerformance);
+        node.postEvents = Strings(data.PostEvents);
+        node.hideFlags = HideFlags.HideAndDontSave;
+        return node;
+    }
+
+    // MapNode is a native structure, so its value is written through InteropTables by the caller.
+    internal static DaySceneMapProfile.MapNode MapNode(DayMapData data, AssetReference? reference)
+    {
+        var node = new DaySceneMapProfile.MapNode();
+        node.mapName = data.Label ?? "";
+        node.parent = data.Parent ?? "";
+        node.mapAssetReference = reference!;
+        node.mapCollectableLabels = Strings(data.Collectables);
+        node.mapSpawnMarkerLabels = Strings(SpawnMarkerLabels(data));
+        node.level1IzakayaId = Ints(data.Level1IzakayaIds);
+        node.level2IzakayaId = Ints(data.Level2IzakayaIds);
+        node.level3IzakayaId = Ints(data.Level3IzakayaIds);
+        return node;
+    }
+
+    internal static string[] SpawnMarkerLabels(DayMapData data)
+    {
+        var markers = data.SpawnMarkers ?? [];
+        var labels = new string[markers.Length];
+        for (var i = 0; i < markers.Length; i++)
+            labels[i] = Marker(data.Label, markers[i]);
+        return labels;
+    }
+
+    internal static string Marker(string? mapLabel, SpawnMarkerData marker) =>
+        $"{mapLabel ?? ""}_{marker.Label ?? ""}";
+
+    internal static CharacterSkinSets.SkinSelectionInfo SkinSelection(int index)
+    {
+        var selection = new CharacterSkinSets.SkinSelectionInfo();
+        selection.selectedType = CharacterSkinSets.SelectedType.DLC;
+        selection.index = index;
+        return selection;
+    }
+
+    private static Il2CppReferenceArray<SchedulerNode.Reward> Rewards(SchedulerRewardData[]? rewards)
+    {
+        rewards ??= [];
+        var array = new Il2CppReferenceArray<SchedulerNode.Reward>(rewards.Length);
+        for (var i = 0; i < rewards.Length; i++)
+            array[i] = Reward(rewards[i]);
+        return array;
+    }
+
+    private static Il2CppReferenceArray<MissionNode.FinishCondition> Conditions(MissionFinishConditionData[]? conditions)
+    {
+        conditions ??= [];
+        var array = new Il2CppReferenceArray<MissionNode.FinishCondition>(conditions.Length);
+        for (var i = 0; i < conditions.Length; i++)
+            array[i] = FinishCondition(conditions[i]);
+        return array;
+    }
 
     internal static Badge Badge(BadgeData data) => new(data.Id);
 
@@ -189,7 +408,8 @@ internal static class GameRecords
                 stayTime = new Vector2Int(place.StayFrom, place.StayUntil),
                 initialDialogPackIDs = Strings(place.Dialogs),
                 interactiveAreaSize = place.InteractSize,
-                switchConditionLabel = place.Switch ?? "",
+                // The paid build of 4.4.0e has no switch condition field on this struct (the game
+                // project source does), so a place's Switch value has no target table entry here.
             };
         }
 
@@ -268,24 +488,7 @@ internal static class GameRecords
     private static CharacterSkinSets Skins(SpecialGuestData data, string root)
     {
         var skins = ScriptableObject.CreateInstance<CharacterSkinSets>();
-        var fallback = DataBaseCharacter.FallbackCompactPixel;
-        CharacterSpriteSetCompact pixel;
-        if (data.Body is not { Length: > 0 } && data.Eyes is not { Length: > 0 })
-        {
-            pixel = fallback ?? EmptyPixel();
-        }
-        else
-        {
-            pixel = ScriptableObject.CreateInstance<CharacterSpriteSetCompact>();
-            var body = data.Body is { Length: > 0 } ? AsRefs(Load(data.Body, root)) : fallback?.MainSprite ?? AsRefs([]);
-            var eyes = data.Eyes is { Length: > 0 } ? AsRefs(Load(data.Eyes, root)) : fallback?.EyeSprite ?? AsRefs([]);
-            if (fallback is null)
-                pixel.Initialize(body, true, eyes, false, 1f, 0f, false, 0f, false, 1f, new Il2CppReferenceArray<CharacterSpriteSetCompact.RemovableTrimProperty>(0), AsRefs([]), AsRefs([]), 0f, 0f);
-            else
-                pixel.Initialize(body, fallback.DoNotUseEyeSprite, eyes, fallback.HasPrebakedShadow, fallback.AnimationSpeedMultiplier, fallback.ExtraYOffset, fallback.IsHina, fallback.RotatePerTime, fallback.DoNotHaveStepVFX, fallback.MoveSpeedMultiplier, fallback.RemovableTrims, fallback.TrimSpritesDisplayFront, fallback.TrimSpritesDisplayBack, fallback.TrimFrontSpriteFrameSpeed, fallback.TrimBackSpriteFrameSpeed);
-        }
-
-        skins.Initialize(pixel, new Il2CppReferenceArray<CharacterSpriteSetCompact>(0), new Il2CppReferenceArray<CharacterSpriteSetCompact>(0));
+        skins.Initialize(CompactPixel(data.Body, data.Eyes, root), new Il2CppReferenceArray<CharacterSpriteSetCompact>(0), new Il2CppReferenceArray<CharacterSpriteSetCompact>(0));
         return skins;
     }
 

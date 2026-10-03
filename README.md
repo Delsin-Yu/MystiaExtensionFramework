@@ -28,7 +28,7 @@ dotnet run --project src/Mystia.CatalogGen -- <game-project-dir>
 dotnet run --project src/Mystia.InteropGen -- <game-project-dir> <game-install-dir>
 ```
 
-The project directory is the game repository root. Catalog generation reads `Assets/_SortedAssets/DataBase`. Interop generation reads the `Managed` folder under `Build/Symbols`, and `GameAssembly.dll` plus `global-metadata.dat` from the install directory.
+The project directory is the game repository root. Catalog generation reads `Assets/_SortedAssets/DataBase`. Interop generation reads a `Managed` folder under `Build` (for example `Build/<game>_BackUpThisFolder_ButDontShipItWithYourGame/Managed`), and `GameAssembly.dll` plus `global-metadata.dat` from the install directory.
 
 A mod is a class library. Declare one type per behavior, mark the interfaces with `[AutoWire]`, and add `mod.json` next to the assembly:
 

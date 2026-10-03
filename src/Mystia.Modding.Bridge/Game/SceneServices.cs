@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Common.TimelineExtestion;
 using Il2CppInterop.Runtime;
 using Common.UI;
@@ -46,10 +46,32 @@ internal sealed class CommonServices : ICommonServices
         UniversalGameManager.LoadScene(scene);
     }
 
+    public ICoroutineDispatcher Coroutines => CoroutineScheduler.Shared;
+
+    public IDialogCatalog Dialogs => DialogCatalog.Shared;
+
+    public IGuestRecords Records => GuestRecords.Shared;
+
     public void OpenDialog(DialogPackage dialog, Action onFinished)
     {
         ServiceScope.Require();
         UniversalGameManager.OpenDialogMenu(dialog, onFinished);
+    }
+
+    public void OpenDialog(
+        DialogPackage dialog,
+        Action onFinished,
+        Action<Il2CppSystem.Collections.Generic.Dictionary<int, string>>? replaceText)
+    {
+        ServiceScope.Require();
+        if (replaceText is null)
+        {
+            UniversalGameManager.OpenDialogMenu(dialog, onFinished);
+            return;
+        }
+
+        var callback = DelegateSupport.ConvertDelegate<Il2CppSystem.Action<Il2CppSystem.Collections.Generic.Dictionary<int, string>>>(replaceText);
+        UniversalGameManager.OpenDialogMenu(dialog, onFinished, callback);
     }
 
     public void FadeIn(Action onFinished)
@@ -81,7 +103,7 @@ internal sealed class SplashSceneServices : ISplashSceneServices
 {
     internal static readonly SplashSceneServices Shared = new();
 
-    public ICommonServices Common => CommonServices.Shared;
+    public ICommonServices Common => PresentationServices.Shared;
 }
 
 internal sealed class MainSceneServices : IMainSceneServices
@@ -90,7 +112,7 @@ internal sealed class MainSceneServices : IMainSceneServices
 
     public IMainSceneSessionServices Session { get; } = new SessionServices();
 
-    public ICommonServices Common => CommonServices.Shared;
+    public ICommonServices Common => PresentationServices.Shared;
 
     private sealed class SessionServices : IMainSceneSessionServices
     {
@@ -115,14 +137,33 @@ internal sealed class DaySceneServices : IDaySceneServices
 
     public IDaySceneInputServices Input { get; } = new InputServices();
 
-    public ICommonServices Common => CommonServices.Shared;
+    public ICommonServices Common => PresentationServices.Shared;
 
     private sealed class MapServices : IDaySceneMapServices
     {
-        public void Swap(string mapLabel, string markerName, int travelCount)
+        public void RefreshSpawnMarkers()
         {
             ServiceScope.Require();
-            DayScene.SceneManager.instance.SwapMap(mapLabel, markerName, travelCount);
+            SpawnMarkerPipeline.RefreshCurrent();
+        }
+
+        public void Swap(string mapLabel, string markerName, int travelCount, Action? onFinished = null)
+        {
+            ServiceScope.Require();
+            var manager = DayScene.SceneManager.instance;
+            if (onFinished is null)
+            {
+                manager.SwapMap(mapLabel, markerName, travelCount);
+                return;
+            }
+
+            // The game only ever passes its own callback in, so ours goes in as onSwapFinish and every
+            // other argument keeps the defaults the three argument call produces.
+            manager.SwapMap(
+                mapLabel,
+                markerName,
+                travelCount,
+                onSwapFinish: DelegateSupport.ConvertDelegate<Il2CppSystem.Action>(onFinished));
         }
     }
 
@@ -144,6 +185,13 @@ internal sealed class DaySceneServices : IDaySceneServices
         {
             ServiceScope.Require();
             DayScene.SceneManager.instance.Chat(characterLabel, false);
+        }
+
+        public void ReplayReward(in SchedulerNode.Reward reward)
+        {
+            ServiceScope.Require();
+            var value = reward;
+            StockGate.Bypass(() => RunTimeScheduler.ProcessReward(value));
         }
     }
 
@@ -195,7 +243,7 @@ internal sealed class PrepNightSceneServices : IPrepNightSceneServices
 
     public IPrepNightSessionServices Session { get; } = new SessionServices();
 
-    public ICommonServices Common => CommonServices.Shared;
+    public ICommonServices Common => PresentationServices.Shared;
 
     private sealed class MapServices : IPrepNightMapServices
     {
@@ -256,6 +304,12 @@ internal sealed class PrepNightSceneServices : IPrepNightSceneServices
 
     private sealed class SessionServices : IPrepNightSessionServices
     {
+        public void SetCompleteEnabled(bool enabled)
+        {
+            ServiceScope.Require();
+            StockGate.PrepComplete = enabled;
+        }
+
         public void Confirm()
         {
             ServiceScope.Require();
@@ -263,7 +317,8 @@ internal sealed class PrepNightSceneServices : IPrepNightSceneServices
             var method = AccessTools.Method(typeof(IzakayaConfigPannel), "_SolveDailyCompletion_b__61_7")
                 ?? AccessTools.Method(typeof(IzakayaConfigPannel), "SolveDailyCompletion")
                 ?? throw new MissingMethodException(typeof(IzakayaConfigPannel).FullName, "SolveDailyCompletion");
-            method.Invoke(panel, null);
+            // The callback carries the SetCompleteEnabled gate, so the service's own press bypasses it.
+            StockGate.Bypass(() => method.Invoke(panel, null));
         }
 
         public void ToWork()
@@ -278,7 +333,7 @@ internal sealed class WorkSceneServices : IWorkSceneServices
 {
     internal static readonly WorkSceneServices Shared = new();
 
-    public IWorkSceneGuests Guests { get; } = new GuestServices();
+    public IWorkSceneGuests Guests { get; } = WorkSceneGuestServing.Extend(new GuestServices());
 
     public IWorkSceneCook Cook { get; } = new CookServices();
 
@@ -286,11 +341,19 @@ internal sealed class WorkSceneServices : IWorkSceneServices
 
     public IWorkSceneTray Tray { get; } = new TrayServices();
 
-    public IWorkSceneTime Time { get; } = new TimeServices();
+    public IWorkSceneTime Time { get; } = WorkSceneTimeServices.Shared;
+
+    public IWorkSceneEconomyServices Economy { get; } = WorkSceneEconomyServices.Shared;
+
+    public IQteServices Qte { get; } = QteServices.Shared;
+
+    public IWorkSceneBuffs Buffs { get; } = WorkSceneBuffsServices.Shared;
+
+    public ISpellHost Spells { get; } = WorkSceneSpellHost.Shared;
 
     public IWorkSceneIzakaya Izakaya { get; } = new IzakayaServices();
 
-    public ICommonServices Common => CommonServices.Shared;
+    public ICommonServices Common => PresentationServices.Shared;
 
     private sealed class GuestServices : IWorkSceneGuests
     {
@@ -298,6 +361,12 @@ internal sealed class WorkSceneServices : IWorkSceneServices
         {
             ServiceScope.Require();
             NightScene.NightSceneDirector.instance.ShouldGuestSpawn(enabled);
+        }
+
+        public void SetSeatingEnabled(bool enabled)
+        {
+            ServiceScope.Require();
+            StockGate.Seating = enabled;
         }
 
         public void SetLeaveEnabled(bool enabled)
@@ -310,6 +379,12 @@ internal sealed class WorkSceneServices : IWorkSceneServices
         {
             ServiceScope.Require();
             StockGate.Order = enabled;
+        }
+
+        public void SetEvaluationEnabled(bool enabled)
+        {
+            ServiceScope.Require();
+            StockGate.Evaluation = enabled;
         }
 
         public GuestGroupController SpawnNormal(IReadOnlyList<NormalGuest> guests, int desk = -1)
@@ -343,7 +418,9 @@ internal sealed class WorkSceneServices : IWorkSceneServices
             ServiceScope.Require();
             if (seat >= 0)
                 SeatChoice.Remember(group, seat);
-            return GuestsManager.instance.TrySendToSeat(group, firstSpawn, desk, true);
+            var seated = false;
+            StockGate.Bypass(() => seated = GuestsManager.instance.TrySendToSeat(group, firstSpawn, desk, true));
+            return seated;
         }
 
         public GuestGroupController At(int desk)
@@ -406,15 +483,36 @@ internal sealed class WorkSceneServices : IWorkSceneServices
             GameMembers.Invoke(GuestsManager.instance, "GenerateOrderSession", group, true);
         }
 
+        public void BeginOrderSession(
+            GuestGroupController group,
+            GuestsManager.OrderGenerationResult result,
+            GuestsManager.OrderBase order,
+            string message)
+        {
+            ServiceScope.Require();
+            PendingOrder.Arm(group, order, message);
+            // The order hook drops the pending order as soon as the game takes it, so the result is kept
+            // next to it for the whole session (see OrderHolds); the legacy overload arms no result.
+            PendingOrderResult.Arm(group, result);
+            GameMembers.Invoke(GuestsManager.instance, "GenerateOrderSession", group, true);
+        }
+
         public void Evaluate(GuestGroupController group)
         {
             ServiceScope.Require();
-            GuestsManager.instance.EvaluateOrder(group, false, null);
+            // EvaluateOrder carries the SetEvaluationEnabled gate; the service's own evaluation bypasses it.
+            StockGate.Bypass(() => GuestsManager.instance.EvaluateOrder(group, false, null));
         }
     }
 
     private sealed class CookServices : IWorkSceneCook
     {
+        public void SetCallEnabled(bool enabled)
+        {
+            ServiceScope.Require();
+            StockGate.CookCall = enabled;
+        }
+
         public void Start(int cookerIndex, Sellable result, Recipe recipe)
         {
             ServiceScope.Require();
@@ -486,10 +584,22 @@ internal sealed class WorkSceneServices : IWorkSceneServices
 
     private sealed class IzakayaServices : IWorkSceneIzakaya
     {
+        public void SetCloseEnabled(bool enabled)
+        {
+            ServiceScope.Require();
+            StockGate.IzakayaClose = enabled;
+        }
+
+        public void SetTimeCloseEnabled(bool enabled)
+        {
+            ServiceScope.Require();
+            BridgeGates.TimeClose = enabled;
+        }
+
         public void Close()
         {
             ServiceScope.Require();
-            GuestsManager.instance.TryCloseIzakaya();
+            StockGate.Bypass(() => GuestsManager.instance.TryCloseIzakaya());
         }
     }
 }
@@ -498,12 +608,12 @@ internal sealed class StaffSceneServices : IStaffSceneServices
 {
     internal static readonly StaffSceneServices Shared = new();
 
-    public ICommonServices Common => CommonServices.Shared;
+    public ICommonServices Common => PresentationServices.Shared;
 }
 
 internal sealed class ResultSceneServices : IResultSceneServices
 {
     internal static readonly ResultSceneServices Shared = new();
 
-    public ICommonServices Common => CommonServices.Shared;
+    public ICommonServices Common => PresentationServices.Shared;
 }

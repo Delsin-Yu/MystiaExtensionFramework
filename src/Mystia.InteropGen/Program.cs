@@ -16,8 +16,9 @@ public static class Program
     {
         if (args.Length < 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
         {
-            Console.Error.WriteLine("Usage: Mystia.InteropGen <game-project-dir> <game-install-dir> [output-dir]");
-            Console.Error.WriteLine("The project directory must contain Build\\Symbols\\...\\Managed.");
+            Console.Error.WriteLine("Usage: Mystia.InteropGen <game-project-dir> <game-install-dir> [output-dir] [unity-libs-dir]");
+            Console.Error.WriteLine("The project directory must contain a Build folder holding a Managed backup, such as");
+            Console.Error.WriteLine("Build\\Symbols\\...\\Managed or Build\\<game>_BackUpThisFolder_ButDontShipItWithYourGame\\Managed.");
             Console.Error.WriteLine("The install directory must contain GameAssembly.dll and global-metadata.dat.");
             return 1;
         }
@@ -33,6 +34,8 @@ public static class Program
             Console.Error.WriteLine("Managed backup was not found under " + args[0]);
             return 1;
         }
+
+        var unityLibs = FindUnityLibs(args.ElementAtOrDefault(3), managed);
 
         if (!File.Exists(gameAssembly) || metadata is null)
         {
@@ -53,7 +56,7 @@ public static class Program
         {
             Source = LoadManagedAssemblies(managed),
             OutputDir = output,
-            UnityBaseLibsDir = managed,
+            UnityBaseLibsDir = unityLibs,
             GameAssemblyPath = gameAssembly,
             PassthroughNames = true,
             Parallel = true,
@@ -71,6 +74,7 @@ public static class Program
             gameAssemblyPath = gameAssembly,
             metadataPath = metadata,
             managedDir = managed,
+            unityLibsDir = unityLibs,
             outputDir = output,
         };
         File.WriteAllText(
@@ -209,12 +213,26 @@ public static class Program
 
     private static string FindManaged(string projectDir)
     {
-        var symbols = Path.Combine(projectDir, "Build", "Symbols");
-        if (!Directory.Exists(symbols))
+        var build = Path.Combine(projectDir, "Build");
+        if (!Directory.Exists(build))
             return "";
 
-        return Directory.EnumerateDirectories(symbols, "Managed", SearchOption.AllDirectories)
+        return Directory.EnumerateDirectories(build, "Managed", SearchOption.AllDirectories)
             .FirstOrDefault(dir => File.Exists(Path.Combine(dir, "Assembly-CSharp.dll"))) ?? "";
+    }
+
+    // The IL2CPP managed backup carries Unity's own assemblies next to the game assemblies,
+    // so it is the default source of Unity base libraries. An explicit directory may override it.
+    private static string FindUnityLibs(string? explicitDir, string managed)
+    {
+        if (string.IsNullOrWhiteSpace(explicitDir))
+            return managed;
+
+        if (File.Exists(Path.Combine(explicitDir, "UnityEngine.CoreModule.dll")))
+            return explicitDir;
+
+        Console.Error.WriteLine(explicitDir + " has no UnityEngine.CoreModule.dll; using the managed backup instead.");
+        return managed;
     }
 
     private static string? FindMetadata(string installDir)

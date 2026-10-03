@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using HarmonyLib;
 using Mystia.Listeners;
 using Mystia.Scenes;

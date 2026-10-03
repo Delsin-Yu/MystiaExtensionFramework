@@ -9,10 +9,10 @@ namespace Mystia.Modding.Bridge;
 
 internal static class GuestPipeline
 {
-    internal static IGuestDriver? NotifySpawned(GuestGroupController group)
+    internal static IGuestDriver? NotifySpawned(GuestGroupController group, GuestSpawnRequest request = default)
     {
         foreach (var listener in Dispatch.Instances<IGuestGroupListener>())
-            listener.OnGroupSpawned(group);
+            listener.OnGroupSpawned(group, request);
         foreach (var director in Dispatch.Instances<IGuestDirector>())
         {
             var driver = director.Claim(group);

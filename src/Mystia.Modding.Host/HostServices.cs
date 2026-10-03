@@ -1,12 +1,16 @@
-using Mystia.Modding.Bridge;
+﻿using Mystia.Modding.Bridge;
 using Mystia;
 using UnityEngine;
 
 namespace Mystia.Modding.Host;
 
-internal sealed class TextLog(Action<string> write, string tag = "")
+internal sealed class TextLog(Action<string> write, string tag = "", string id = "", string version = "")
     : ILog
 {
+    public string Id { get; } = id;
+
+    public string Version { get; } = version;
+
     public void Info(string message) => Write("INFO", message);
 
     public void Warning(string message) => Write("WARN", message);
@@ -15,7 +19,39 @@ internal sealed class TextLog(Action<string> write, string tag = "")
 
     public void Debug(string message) => Write("DEBUG", message);
 
-    public ILog Tag(string tag) => new TextLog(write, tag);
+    public void Message(string message) => Write("MESSAGE", message);
+
+    public void Fatal(string message) => Write("FATAL", message);
+
+    public void Log(LogLevel level, string message)
+    {
+        switch (level)
+        {
+            case LogLevel.Debug:
+                Debug(message);
+                break;
+            case LogLevel.Info:
+                Info(message);
+                break;
+            case LogLevel.Message:
+                Message(message);
+                break;
+            case LogLevel.Warning:
+                Warning(message);
+                break;
+            case LogLevel.Error:
+                Error(message);
+                break;
+            case LogLevel.Fatal:
+                Fatal(message);
+                break;
+            default:
+                Info(message);
+                break;
+        }
+    }
+
+    public ILog Tag(string tag) => new TextLog(write, tag, Id, Version);
 
     private void Write(string level, string message)
     {
@@ -43,6 +79,12 @@ internal sealed class HostContext(string gameRoot, string modsDirectory, ILog lo
     public IGamePaths Paths { get; } = new HostPaths(gameRoot, modsDirectory);
 
     public IIl2CppComponentHost Components { get; } = components;
+
+    public IModCache Cache { get; } = new ModStorage(Path.Combine(modsDirectory, "host-state"));
+
+    public IModConfigSource Config => (IModConfigSource)Cache;
+
+    public IPlatformInfo Platform => PlatformInfo.Shared;
 
     public Sprite LoadSprite(string path) => SpriteFiles.Load(Paths.ModDirectory, path);
 

@@ -141,3 +141,15 @@ Mapping tables `FoodsMapping`, `BeveragesMapping` and `RecipesMapping` record th
 ## Tooling
 
 `Mystia.InteropGen` accepts a Unity project's `Library/ScriptAssemblies` as the managed source and takes Unity base libraries from a separate directory, so interop can be generated without an IL2CPP symbols build.
+
+## Delivered
+
+Everything below the design sections is implemented, except where noted:
+
+- Host: `IGlobalGameLoop`/`IGlobalServices`, `IIMGUIProvider`/`IIMGUIDrawer`, coroutines with a managed pump and opaque handles, `IModCache`/`IModConfigSource`, `IDialogCatalog`, `IGuestRecords`, extended `ILog`, `IPlatformInfo` on `IModContext`.
+- Listeners: session, status, mission, day/work UI, metrics, QTE, schedule, chat option/menu, cook selection, post-evaluation, guest spawn requests, leave dispatch for `LeaveFromDesk`.
+- Services: economy (metrics edits + popularity tags), time (whole night seconds, timing gate), QTE, buffs, spell host, spawn marker refresh, reward replay.
+- Data: clothes, spells, buffs, mission/event nodes, day maps and the extension seams they need; merchants now carry a full runtime pipeline.
+- Spells: mods implement `ISpell`; the bridge wraps it in its own `SpellBase` subclass, drives the managed routine on the framework pump and enters the scene scope per resume step.
+
+Still open: `PlayVfx`/`PlayAudio` are placeholders (a mod-scoped asset path context is missing), the spell declaration portrait pivot is carried by `SpellData` but not consumed yet, and `SceneLoops.cs` keeps scaffolding defaults for members whose inner implementations live in `SceneServices.cs`.

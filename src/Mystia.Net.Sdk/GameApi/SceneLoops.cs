@@ -1,4 +1,4 @@
-using Common.TimelineExtestion;
+﻿using Common.TimelineExtestion;
 using Common.UI;
 using Common.UI.GlobalMap;
 using GameData.Core.Collections;
@@ -6,6 +6,7 @@ using UnityEngine;
 using GameData.Core.Collections.NightSceneUtility;
 using GameData.Profile;
 using NightScene.GuestManagementUtility;
+using NightScene.PartnerUtility;
 
 using Mystia;
 using Mystia.Listeners;
@@ -14,9 +15,17 @@ namespace Mystia.Scenes;
 
 public interface ICommonServices
 {
+    ICoroutineDispatcher Coroutines { get; }
+
+    IDialogCatalog Dialogs { get; }
+
+    IGuestRecords Records { get; }
+
     void LoadScene(Scene scene);
 
     void OpenDialog(DialogPackage dialog, Action onFinished);
+
+    void OpenDialog(DialogPackage dialog, Action onFinished, Action<Il2CppSystem.Collections.Generic.Dictionary<int, string>>? replaceText);
 
     void FadeIn(Action onFinished);
 
@@ -25,6 +34,33 @@ public interface ICommonServices
     void SetInputEnabled(bool enabled);
 
     void SetNightTransitionEnabled(bool enabled);
+
+    // Bridge implemented members; the default body throws until the bridge wiring lands, so an unwired
+    // member fails loudly instead of silently doing nothing.
+
+    /// <summary>Shakes the camera for the given duration, with the given strength and frequency.</summary>
+    void ShakeCamera(float duration, float strength, float frequency) => throw new NotSupportedException();
+
+    /// <summary>
+    /// Plays the effect asset at a path declared like every other mod resource, at a world position, and
+    /// returns a handle for stopping it early.
+    /// </summary>
+    IVfxHandle PlayVfx(string assetPath, Vector3 position) => throw new NotSupportedException();
+
+    /// <summary>Plays the audio asset at a path declared like every other mod resource.</summary>
+    void PlayAudio(string assetPath) => throw new NotSupportedException();
+
+    /// <summary>World position of the player character.</summary>
+    Vector3 PlayerPosition => throw new NotSupportedException();
+
+    /// <summary>World position of the table of a desk.</summary>
+    Vector3 TablePosition(int deskCode) => throw new NotSupportedException();
+
+    /// <summary>Display text of a food tag id.</summary>
+    string FoodTagText(int tagId) => throw new NotSupportedException();
+
+    /// <summary>Display text of an evaluation level.</summary>
+    string EvaluationText(int evaluation) => throw new NotSupportedException();
 }
 
 [AutoWire]
@@ -89,7 +125,10 @@ public interface IDaySceneServices
 
 public interface IDaySceneMapServices
 {
-    void Swap(string mapLabel, string markerName, int travelCount);
+    void Swap(string mapLabel, string markerName, int travelCount, Action? onFinished = null);
+
+    /// <summary>Rebuilds the spawn markers of the current map from the day map data.</summary>
+    void RefreshSpawnMarkers() => throw new NotSupportedException();
 }
 
 public interface IDaySceneScheduleServices
@@ -99,6 +138,9 @@ public interface IDaySceneScheduleServices
     void End();
 
     void Chat(string characterLabel);
+
+    /// <summary>Replays one node reward through the game's own reward path.</summary>
+    void ReplayReward(in SchedulerNode.Reward reward) => throw new NotSupportedException();
 }
 
 public interface IDaySceneInputServices
@@ -160,6 +202,8 @@ public interface IPrepNightMenuServices
 
 public interface IPrepNightSessionServices
 {
+    void SetCompleteEnabled(bool enabled);
+
     void Confirm();
 
     void ToWork();
@@ -179,6 +223,10 @@ public interface IWorkSceneServices
 {
     IWorkSceneGuests Guests { get; }
 
+    IWorkSceneEconomyServices Economy { get; }
+
+    IQteServices Qte { get; }
+
     IWorkSceneCook Cook { get; }
 
     IWorkSceneStorage Storage { get; }
@@ -189,6 +237,12 @@ public interface IWorkSceneServices
 
     IWorkSceneIzakaya Izakaya { get; }
 
+    /// <summary>Timed buffs of the running work scene.</summary>
+    IWorkSceneBuffs Buffs => throw new NotSupportedException();
+
+    /// <summary>The spell the running work scene is executing.</summary>
+    ISpellHost Spells => throw new NotSupportedException();
+
     ICommonServices Common { get; }
 }
 
@@ -196,9 +250,13 @@ public interface IWorkSceneGuests
 {
     void SetSpawnEnabled(bool enabled);
 
+    void SetSeatingEnabled(bool enabled);
+
     void SetLeaveEnabled(bool enabled);
 
     void SetOrderingEnabled(bool enabled);
+
+    void SetEvaluationEnabled(bool enabled);
 
     GuestGroupController SpawnNormal(IReadOnlyList<NormalGuest> guests, int desk = -1);
 
@@ -216,11 +274,40 @@ public interface IWorkSceneGuests
 
     void BeginOrderSession(GuestGroupController group, GuestsManager.OrderBase order, string message);
 
+    void BeginOrderSession(GuestGroupController group, GuestsManager.OrderGenerationResult result, GuestsManager.OrderBase order, string message);
+
     void Evaluate(GuestGroupController group);
+
+    // Bridge implemented members; the default bodies throw until the bridge wiring lands, so an unwired
+    // member fails loudly instead of silently doing nothing.
+
+    /// <summary>
+    /// Sends one beverage to a group through the game's own serving path (it goes in the air first, the
+    /// landing spot is re-checked and the order is evaluated when it becomes full). Returns the beverage that
+    /// was actually registered on the order, or null when the serve was dropped.
+    /// </summary>
+    Sellable? ServeBeverage(GuestGroupController group, Sellable beverage) => throw new NotSupportedException();
+
+    /// <summary>Marks a beverage as being thrown to a group, or clears that mark with null.</summary>
+    void SetBeverageInAir(GuestGroupController group, Sellable? beverage) => throw new NotSupportedException();
+
+    /// <summary>Tells the partners that an order changed status (the same call the game's own serving makes).</summary>
+    void NotifyOrderStatusUpdate(GuestsManager.OrderBase order, PartnerManager.OrderChangeContext context, int index) => throw new NotSupportedException();
+
+    /// <summary>The guest groups currently seated at a desk.</summary>
+    IReadOnlyList<GuestGroupController> InDeskGuests => throw new NotSupportedException();
+
+    /// <summary>The order a group is currently considering; null when it has none.</summary>
+    GuestsManager.OrderBase? PendingOrder(GuestGroupController group) => throw new NotSupportedException();
+
+    /// <summary>Whether both the dish and the beverage of an order have been served.</summary>
+    bool IsOrderFullfilled(GuestsManager.OrderBase order) => throw new NotSupportedException();
 }
 
 public interface IWorkSceneCook
 {
+    void SetCallEnabled(bool enabled);
+
     void Start(int cookerIndex, Sellable result, Recipe recipe);
 
     void Extract(int cookerIndex);
@@ -245,11 +332,34 @@ public interface IWorkSceneTray
 public interface IWorkSceneTime
 {
     void SetMode(GameTimeManager.TimeMode mode);
+
+    // Bridge implemented members; the default bodies throw until the bridge wiring lands.
+
+    /// <summary>Whole length of the night in seconds; writing it replaces the game's night length source.</summary>
+    int WholeNightSeconds
+    {
+        get => throw new NotSupportedException();
+        set => throw new NotSupportedException();
+    }
+
+    /// <summary>Gates guest spawning and the night countdown starting (covers the normal, challenge and creator box loops).</summary>
+    void SetTimingEnabled(bool enabled) => throw new NotSupportedException();
+
+    /// <summary>Starts one night with the arguments the game would have used.</summary>
+    void BeginTiming() => throw new NotSupportedException();
 }
 
 public interface IWorkSceneIzakaya
 {
+    void SetCloseEnabled(bool enabled);
+
     void Close();
+
+    /// <summary>
+    /// Gates the time driven path that closes the izakaya when the countdown reaches zero, for when the
+    /// player driven close cannot be gated alone.
+    /// </summary>
+    void SetTimeCloseEnabled(bool enabled) => throw new NotSupportedException();
 }
 
 [AutoWire]
@@ -285,6 +395,10 @@ public interface IResultSceneServices
 [AutoWire]
 public interface IGuestSpawnModifier
 {
+    void OnPreSpawnNormalGuests(ref GuestSpawnRequest request, ref bool cancelInvocation) { }
+
+    void OnPreSpawnSpecialGuest(ref GuestSpawnRequest request, ref int guestId, ref bool cancelInvocation) { }
+
     void OnNormalGuestsGenerating(ref List<NormalGuest> guests) { }
 
     void OnSpecialGuestGenerating(ref int guestId) { }

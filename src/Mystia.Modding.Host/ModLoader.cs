@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Mystia.Modding.Bridge;
 using Mystia;
 using UnityEngine;
@@ -56,10 +56,10 @@ internal static class ModLoader
 
             var before = registry.Count;
             register.Invoke(null, [registry]);
-            var modContext = new ScopedContext(context, manifest.Directory, context.Log.Tag(manifest.Id));
+            var modContext = new ScopedContext(context, manifest.Directory, context.Log.Tag(manifest.Id), manifest.Id, manifest.Version);
             foreach (var instance in registry.InstancesAddedSince(before))
             {
-                ContentOrigin.Bind(instance, manifest.Directory);
+                ContentOrigin.Bind(instance, manifest.Id);
                 if (instance is IPostInitialize post)
                     post.PostInitialize(modContext);
             }
@@ -87,10 +87,10 @@ internal static class ModLoader
         return Path.GetFullPath(candidates[0]);
     }
 
-    private sealed class ScopedContext(IModContext inner, string modDirectory, ILog log)
+    private sealed class ScopedContext(IModContext inner, string modDirectory, ILog log, string modId, string modVersion)
         : IModContext
     {
-        public ILog Log { get; } = log;
+        public ILog Log { get; } = new ModLog(log, modId, modVersion);
 
         public IMainThreadScheduler MainThread => inner.MainThread;
 
@@ -98,7 +98,37 @@ internal static class ModLoader
 
         public IIl2CppComponentHost Components => inner.Components;
 
+        public IModCache Cache { get; } = new ModStorage(Path.Combine(modDirectory, ".state"));
+
+        public IModConfigSource Config => (IModConfigSource)Cache;
+
+        public IPlatformInfo Platform => PlatformInfo.Shared;
+
         public Sprite LoadSprite(string path) => SpriteFiles.Load(Paths.ModDirectory, path);
+    }
+
+    /// <summary>Adds the mod's own identity to any log it receives from the host.</summary>
+    private sealed class ModLog(ILog inner, string id, string version) : ILog
+    {
+        public string Id { get; } = id;
+
+        public string Version { get; } = version;
+
+        public void Debug(string message) => inner.Debug(message);
+
+        public void Info(string message) => inner.Info(message);
+
+        public void Message(string message) => inner.Message(message);
+
+        public void Warning(string message) => inner.Warning(message);
+
+        public void Error(string message) => inner.Error(message);
+
+        public void Fatal(string message) => inner.Fatal(message);
+
+        public void Log(LogLevel level, string message) => inner.Log(level, message);
+
+        public ILog Tag(string tag) => new ModLog(inner.Tag(tag), Id, Version);
     }
 
     private sealed class ScopedPaths(string gameRoot, string modDirectory)

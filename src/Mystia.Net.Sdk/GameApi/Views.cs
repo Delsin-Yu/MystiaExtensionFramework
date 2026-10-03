@@ -1,0 +1,161 @@
+using Common.UI;
+using Common.UI.GlobalMap;
+using GameData.Core.Collections;
+using NightScene.GuestManagementUtility;
+using NightScene.UI.CookingUtility;
+using NightScene.UI.GuestManagementUtility;
+using PrepNightScene.UI;
+
+namespace Mystia.Scenes;
+
+// Views are the framework's own types: the game has no such classes. The bridge builds one from the game
+// panel it is sitting in (the internal constructor) and hands it to listeners in place of the panel itself.
+// A view is only valid while that panel is open, so a mod must not keep one past the callback that gave it.
+
+/// <summary>The work scene serve panel of one desk.</summary>
+public sealed class ServePannelView
+{
+    private readonly WorkSceneServePannel _panel;
+
+    internal ServePannelView(WorkSceneServePannel panel) => _panel = panel;
+
+    /// <summary>The guest group the panel serves; null while the panel has no guest.</summary>
+    public GuestGroupController Guest => _panel.currentGuestController;
+
+    public GuestsManager.OrderBase Order => _panel.operatingOrder;
+
+    /// <summary>The desk the panel serves, or -1 when the panel has neither guest nor order.</summary>
+    public int DeskCode => _panel.currentGuestController?.DeskCode ?? _panel.operatingOrder?.DeskCode ?? -1;
+
+    /// <summary>The dish taken off the tray and waiting for confirmation; null means none.</summary>
+    public Sellable? PendingFood
+    {
+        get => _panel.willServeFood;
+        set => _panel.willServeFood = value;
+    }
+
+    /// <summary>The beverage taken off the tray and waiting for confirmation; null means none.</summary>
+    public Sellable? PendingBeverage
+    {
+        get => _panel.willServeBeverage;
+        set => _panel.willServeBeverage = value;
+    }
+
+    /// <summary>Renders both pending slots: a filled slot shows its icon as cancellable, an empty one is cleared.</summary>
+    public void RefreshPendingVisual()
+    {
+        if (PendingFood is null)
+            _panel.ResetServedVisualOnUI(_panel.servFood, _panel.servFoodOutline);
+        else
+            _panel.SetServedVisualOnUI(_panel.servFood, _panel.servFoodOutline, PendingFood, true);
+
+        if (PendingBeverage is null)
+            _panel.ResetServedVisualOnUI(_panel.servBev, _panel.servBevOutline);
+        else
+            _panel.SetServedVisualOnUI(_panel.servBev, _panel.servBevOutline, PendingBeverage, true);
+    }
+
+    /// <summary>Drops both pending slots and clears their visuals.</summary>
+    public void ResetPendingVisual()
+    {
+        PendingFood = null;
+        PendingBeverage = null;
+        _panel.ResetServedVisualOnUI(_panel.servFood, _panel.servFoodOutline);
+        _panel.ResetServedVisualOnUI(_panel.servBev, _panel.servBevOutline);
+    }
+
+    /// <summary>Closes the panel through the game's own close path.</summary>
+    public void Close() => _panel.CloseExternPanel();
+}
+
+/// <summary>The izakaya selection guide map.</summary>
+public sealed class GuideMapView
+{
+    private readonly IzakayaSelectorPanel_New _panel;
+
+    internal GuideMapView(IzakayaSelectorPanel_New panel) => _panel = panel;
+
+    /// <summary>
+    /// The spot the player currently points at; null when there is none. This is the same object the game
+    /// maps to the panel's spot extension, so it is what <see cref="IPrepNightMapServices.Confirm"/> needs.
+    /// </summary>
+    public IGuideMapSpot? SelectedSpot => _panel.m_CurrentSelectedSpot;
+
+    /// <summary>Label of the spot the player currently points at; null when there is none.</summary>
+    public string? SelectedMapLabel => _panel.m_CurrentSelectedSpot?.PrimaryName;
+
+    /// <summary>The selected izakaya level as the game's <c>IzakayaLevel</c> value; 0 means not selected.</summary>
+    public int SelectedLevel => (int)_panel.m_CurrentSelectedIzakayaLevel;
+
+    /// <summary>Re-reads the current selection into the describer and the level toggles.</summary>
+    public void RefreshSelection() => _panel.UpdateCurrentIzakaya();
+}
+
+/// <summary>The prep night izakaya configuration panel.</summary>
+public sealed class PrepConfigView
+{
+    private readonly IzakayaConfigPannel _panel;
+
+    internal PrepConfigView(IzakayaConfigPannel panel) => _panel = panel;
+
+    /// <summary>Whether the panel is currently open.</summary>
+    public bool IsOpen => _panel.IsPanelOpened;
+
+    /// <summary>
+    /// The name of the panel object. The game keys its panel stack by that name, so a caller that wants to
+    /// close the panels stacked above this one passes it to the game's own close-until helper.
+    /// </summary>
+    public string Name => _panel.name;
+
+    /// <summary>The open tab: 0 recipe, 1 beverage, 2 cooker (the game's <c>CurrentConfigType</c>).</summary>
+    public int SelectedTab => (int)_panel.m_CurrentConfigType;
+
+    /// <summary>Refreshes the completion state (work button and blockers).</summary>
+    public void Refresh() => _panel.SolveDailyCompletion();
+
+    /// <summary>Rebuilds the recipe, beverage and cooker lists from the current configuration.</summary>
+    public void UpdateGroups()
+    {
+        _panel.m_RecipeGroup?.UpdateGroupRaw();
+        _panel.m_BeverageGroup?.UpdateGroupRaw();
+        _panel.m_CookerGroup?.UpdateGroupRaw();
+    }
+
+    public void UpdateCookers() => _panel.m_CookerGroup?.UpdateGroupRaw();
+
+    /// <summary>Refreshes the whole panel: completion state plus the three lists.</summary>
+    public void UpdateUi()
+    {
+        Refresh();
+        UpdateGroups();
+    }
+
+    /// <summary>
+    /// Closes the panel through the game's own close path and hands out the token the close fade cancels when
+    /// it finishes, so the caller can wait for the panel to be fully gone. The token has to be read before the
+    /// close starts: the game replaces it for every open/close cycle.
+    /// </summary>
+    public Il2CppSystem.Threading.CancellationToken CloseWithFadeToken()
+    {
+        var fade = _panel.OnPanelCloseFadeFinishToken;
+        _panel.ClosePanel();
+        return fade;
+    }
+}
+
+/// <summary>The day scene shop panel.</summary>
+public sealed class ShopPannelView
+{
+    private readonly DayScene.UI.DaySceneShopPannel _panel;
+
+    internal ShopPannelView(DayScene.UI.DaySceneShopPannel panel) => _panel = panel;
+
+    /// <summary>Whether the opened shelf carries any product.</summary>
+    public bool HasProducts => _panel.allShelfProductList is { Count: > 0 };
+
+    public int ProductCount => _panel.allShelfProductList?.Count ?? 0;
+
+    /// <summary>Removes the custom spacing the panel asked for while its shelf was empty.</summary>
+    public void ClearCustomSpacing() =>
+        ReceivedObjectDisplayerController.TryRemoveCustomSpacing<DayScene.UI.DaySceneShopPannel>();
+}

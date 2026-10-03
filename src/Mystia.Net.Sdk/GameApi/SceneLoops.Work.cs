@@ -140,6 +140,32 @@ public interface IWorkSceneGuests
     void StopPatientCountdown(GuestHandle group) => throw new NotSupportedException();
 
     /// <summary>
+    /// Shows the mood bar of a group that is about to order for the first time and keeps it in step with the
+    /// group's mood. This is the display half of the game's own first order: a machine that replays the first
+    /// order calls it next to <see cref="BeginOrderSession(GuestHandle)"/>, because the replay does not go
+    /// through the panel the game shows the bar from.
+    /// </summary>
+    /// <param name="group">The group whose mood bar is shown.</param>
+    void ShowMood(GuestHandle group) => throw new NotSupportedException();
+
+    /// <summary>
+    /// Registers a group as one the player may drive out of the izakaya. The game does this when a repeated
+    /// order cycle starts, so a machine replaying that cycle has to do it too, or the desk cannot be repelled
+    /// there.
+    /// </summary>
+    /// <param name="group">The group the player may repel from now on.</param>
+    void SetRepellable(GuestHandle group) => throw new NotSupportedException();
+
+    /// <summary>
+    /// Shows a dish on a desk's table, or clears the slot when <paramref name="dish"/> is null, exactly as the
+    /// game's own serving path shows it. The slot of the other kind is left alone.
+    /// </summary>
+    /// <param name="deskCode">The desk whose table shows the dish.</param>
+    /// <param name="dish">The dish to show, or null to clear the slot.</param>
+    /// <param name="kind">Which of the table's two slots the dish belongs to.</param>
+    void ShowServedDish(int deskCode, DishProxy? dish, DishKind kind) => throw new NotSupportedException();
+
+    /// <summary>
     /// Sends one beverage to a group through the game's own serving path (it goes in the air first, the
     /// landing spot is re-checked and the order is evaluated when it becomes full). Returns the beverage that
     /// was actually registered on the order, or null when the serve was dropped.

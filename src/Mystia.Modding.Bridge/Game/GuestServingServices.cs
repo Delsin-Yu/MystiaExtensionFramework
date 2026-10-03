@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using GameData.Core.Collections;
 using GameData.Core.Collections.NightSceneUtility;
+using Il2CppInterop.Runtime;
 using NightScene.GuestManagementUtility;
 using NightScene.PartnerUtility;
 using NightScene.Tiles;
@@ -197,6 +198,51 @@ internal sealed class WorkSceneGuestServing : IWorkSceneGuests
         ServiceScope.Require();
         if (EntitySeams.GuestOf(group) is { } native)
             GuestsManager.instance.RemoveFromPatientCountdown(native);
+    }
+
+    public void ShowMood(GuestHandle group)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native)
+            return;
+        if (Table(native.DeskCode) is not { } table)
+            return;
+
+        // The game's own first order display (GuestsManager.FirstOrder): the bar appears, the group's mood
+        // updates drive it, and re-setting the mood pushes the first value through that callback.
+        table.ShowMood();
+        native.OnMoodUpdateCallback += DelegateSupport.ConvertDelegate<Il2CppSystem.Action<float>>(
+            (Action<float>)table.SetMoodProgress);
+        native.Mood = native.Mood;
+    }
+
+    public void SetRepellable(GuestHandle group)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is { } native)
+            GuestsManager.instance.SetPlayerCanRepelGuest(native);
+    }
+
+    public void ShowServedDish(int deskCode, DishProxy? dish, DishKind kind)
+    {
+        ServiceScope.Require();
+        if (Table(deskCode) is not { } table)
+            return;
+
+        // A cleared slot keeps the other one: the game renderer takes the sprite of the other slot from the
+        // renderer itself (GuestTableDisplayer.SetFoodVisual/SetBeverageVisual).
+        var visual = (dish?.Native as Sellable)?.Text?.Visual;
+        if (kind == DishKind.Food)
+            table.SetFoodVisual(visual);
+        else
+            table.SetBeverageVisual(visual);
+    }
+
+    /// <summary>The displayer of one desk's table, or null when the running scene has no such table.</summary>
+    private static GuestTableDisplayer? Table(int deskCode)
+    {
+        var tables = TileManager.Instance.GuestTables;
+        return tables is not null && tables.ContainsKey(deskCode) ? tables[deskCode].tableDisplayer : null;
     }
 
     private static void LeaveNow(GuestGroupController group, GuestLeaveKind kind)

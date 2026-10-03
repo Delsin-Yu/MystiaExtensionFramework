@@ -14,6 +14,8 @@ using UnityEngine;
 using Mystia;
 using Mystia.Scenes;
 
+using NumericsVector3 = Mystia.Numerics.Vector3;
+
 namespace Mystia.Listeners;
 
 [AutoWire]
@@ -154,42 +156,62 @@ public enum GuestLeaveKind
 /// request back into their arguments; the parameterless <c>SpawnNormalGuestGroup</c> only forwards to the five
 /// argument overload, so a rewrite made for it cannot be applied and is dropped there.
 /// </summary>
+/// <remarks>
+/// The position is the framework's own mirrored value type (see <c>Mystia.Numerics.Vector3</c>), so a mod that
+/// rewrites a spawn never has to name a Unity type, and the leave type is the framework's
+/// <see cref="GuestLeaveType"/> mirror rather than the game's enum.
+/// </remarks>
 public record struct GuestSpawnRequest
 {
-    public Vector3? SpawnPosition;
+    public NumericsVector3? SpawnPosition;
 
-    public GuestGroupController.LeaveType LeaveType;
+    public GuestLeaveType LeaveType;
 
     public int DeskCode;
 
     public bool Fade;
 }
 
+/// <summary>
+/// What happens to a guest group of the running night. Every member names the group by its
+/// <see cref="GuestHandle"/> (never the game's controller), so a listener may compare handles, store them for
+/// later in the same night, and ask them for the group's projection when it needs a value.
+/// <para>
+/// A handle is only valid for the night it was minted in: a handle a listener kept past that night answers
+/// false on <see cref="GuestHandle.TryGet"/>, so a stale reference is refused instead of reaching a controller
+/// the game destroyed.
+/// </para>
+/// <para>
+/// The <c>ref</c> members hand the entity by handle: a listener that wants the game to use another order (or
+/// another dish) writes the handle of that entity back, and the framework resolves it. A listener can only
+/// write a handle the framework minted for it — it cannot build one.
+/// </para>
+/// </summary>
 [AutoWire]
 public interface IGuestGroupListener
 {
-    void OnGroupSpawned(GuestGroupController group, GuestSpawnRequest request) { }
+    void OnGroupSpawned(GuestHandle group, GuestSpawnRequest request) { }
 
-    void OnGroupSeated(GuestGroupController group, int desk) { }
+    void OnGroupSeated(GuestHandle group, int desk) { }
 
-    void OnGroupOrdered(GuestGroupController group, ref GuestsManager.OrderBase order, ref string message) { }
+    void OnGroupOrdered(GuestHandle group, ref OrderHandle? order, ref string message) { }
 
-    void OnGroupOrderGenerated(GuestGroupController group, GuestsManager.OrderGenerationResult result, ref GuestsManager.OrderBase order) { }
+    void OnGroupOrderGenerated(GuestHandle group, OrderGenerationOutcome result, ref OrderHandle? order) { }
 
-    void OnGroupEvaluated(GuestGroupController group, ref GuestGroupController.EvaluationResult result) { }
+    void OnGroupEvaluated(GuestHandle group, ref GuestEvaluation result) { }
 
     /// <summary>The evaluation of a group was resolved and applied; fired after the game finished it.</summary>
-    void OnGroupPostEvaluated(GuestGroupController group, GuestGroupController.EvaluationResult result) { }
+    void OnGroupPostEvaluated(GuestHandle group, GuestEvaluation result) { }
 
-    void OnGroupArrived(GuestGroupController group) { }
+    void OnGroupArrived(GuestHandle group) { }
 
-    void OnGroupMovingToDesk(GuestGroupController group, int desk) { }
+    void OnGroupMovingToDesk(GuestHandle group, int desk) { }
 
-    void OnGroupQueued(GuestGroupController group) { }
+    void OnGroupQueued(GuestHandle group) { }
 
     void OnPrePlayerRepel(int deskCode, ref bool cancelInvocation) { }
 
-    void OnGroupLeft(GuestGroupController group, GuestLeaveKind kind) { }
+    void OnGroupLeft(GuestHandle group, GuestLeaveKind kind) { }
 
     void OnIzakayaClosing() { }
 }

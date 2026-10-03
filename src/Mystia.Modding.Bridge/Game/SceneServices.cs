@@ -69,6 +69,12 @@ internal sealed class CommonServices : ICommonServices
 
     public IAssetLocator Locator => AssetLocator.Shared;
 
+    /// <summary>
+    /// The game data objects a mod ships (dialog packages and scheduler nodes). The builder creates engine
+    /// scriptables, so it is main thread only, exactly like the mod's own build step used to be.
+    /// </summary>
+    public IGameDataBuilder DataObjects => GameDataBuilders.Builder;
+
     // The map builder belongs to the day scene path, but what a mod does with it - describing a map while the
     // databases are collected and publishing it after they initialized - is not scene scoped, so it sits with
     // the assets rather than behind a scene loop.
@@ -362,7 +368,7 @@ internal sealed class WorkSceneServices : IWorkSceneServices
 {
     internal static readonly WorkSceneServices Shared = new();
 
-    public IWorkSceneGuests Guests { get; } = WorkSceneGuestServing.Extend(new GuestServices());
+    public IWorkSceneGuests Guests { get; } = WorkSceneGuestServing.Shared;
 
     public IWorkSceneCook Cook { get; } = new CookServices();
 
@@ -387,156 +393,6 @@ internal sealed class WorkSceneServices : IWorkSceneServices
     public ICommonServices Common => CommonServices.Shared;
 
     public IPresentationServices Presentation => PresentationServices.Shared;
-
-    private sealed class GuestServices : IWorkSceneGuests
-    {
-        public void SetSpawnEnabled(bool enabled)
-        {
-            ServiceScope.Require();
-            NightScene.NightSceneDirector.instance.ShouldGuestSpawn(enabled);
-        }
-
-        public void SetSeatingEnabled(bool enabled)
-        {
-            ServiceScope.Require();
-            StockGate.Seating = enabled;
-        }
-
-        public void SetLeaveEnabled(bool enabled)
-        {
-            ServiceScope.Require();
-            StockGate.Leave = enabled;
-        }
-
-        public void SetOrderingEnabled(bool enabled)
-        {
-            ServiceScope.Require();
-            StockGate.Order = enabled;
-        }
-
-        public void SetEvaluationEnabled(bool enabled)
-        {
-            ServiceScope.Require();
-            StockGate.Evaluation = enabled;
-        }
-
-        public GuestGroupController SpawnNormal(IReadOnlyList<NormalGuest> guests, int desk = -1)
-        {
-            ServiceScope.Require();
-            var native = new Il2CppSystem.Collections.Generic.List<NormalGuest>(guests.Count);
-            foreach (var guest in guests)
-                native.Add(guest);
-            var enumerable = (Il2CppSystem.Collections.Generic.IEnumerable<NormalGuest>)(object)native;
-            return GuestsManager.instance.SpawnNormalGuestGroup(enumerable, default, GuestGroupController.LeaveType.Move, desk, true);
-        }
-
-        public GuestGroupController SpawnSpecial(int guestId, int desk = -1)
-        {
-            ServiceScope.Require();
-            return GuestsManager.instance.SpawnSpecialGuestGroup(
-                guestId,
-                SpecialGuestsController.GuestSpawnType.Normal,
-                default,
-                null,
-                GuestGroupController.LeaveType.Move,
-                true,
-                desk,
-                false,
-                null,
-                true);
-        }
-
-        public bool Seat(GuestGroupController group, int desk, bool firstSpawn = true, int seat = -1)
-        {
-            ServiceScope.Require();
-            if (seat >= 0)
-                SeatChoice.Remember(group, seat);
-            var seated = false;
-            StockGate.Bypass(() => seated = GuestsManager.instance.TrySendToSeat(group, firstSpawn, desk, true));
-            return seated;
-        }
-
-        public GuestGroupController At(int desk)
-        {
-            ServiceScope.Require();
-            return GuestsManager.instance.GetInDeskGuest(desk);
-        }
-
-        public void Leave(GuestGroupController group, GuestLeaveKind kind)
-        {
-            ServiceScope.Require();
-            StockGate.Bypass(() => LeaveNow(group, kind));
-        }
-
-        public void SetPatience(GuestGroupController group, int value)
-        {
-            ServiceScope.Require();
-            group.SetPatient(value);
-        }
-
-        private static void LeaveNow(GuestGroupController group, GuestLeaveKind kind)
-        {
-            var manager = GuestsManager.instance;
-            switch (kind)
-            {
-                case GuestLeaveKind.Paid:
-                    manager.PayAndLeave(group, true);
-                    break;
-                case GuestLeaveKind.ExBad:
-                    GameMembers.Invoke(manager, "ExBadLeave", group);
-                    break;
-                case GuestLeaveKind.RepelledPaid:
-                    manager.RepellAndLeavePay(group, GuestGroupController.LeaveType.Move, true);
-                    break;
-                case GuestLeaveKind.RepelledUnpaid:
-                    manager.RepellAndLeaveNoPay(group, GuestGroupController.LeaveType.Move, true);
-                    break;
-                case GuestLeaveKind.PlayerRepelled:
-                    manager.PlayerRepell(group.DeskCode);
-                    break;
-                case GuestLeaveKind.Patience:
-                    GameMembers.Invoke(manager, "PatientDepletedLeave", group);
-                    break;
-                case GuestLeaveKind.Other:
-                    GameMembers.Invoke(manager, "LeaveFromDesk", group, GuestGroupController.LeaveType.Move, null, true);
-                    break;
-            }
-        }
-
-        public void BeginOrderSession(GuestGroupController group)
-        {
-            ServiceScope.Require();
-            StockGate.Bypass(() => GameMembers.Invoke(GuestsManager.instance, "GenerateOrderSession", group, true));
-        }
-
-        public void BeginOrderSession(GuestGroupController group, GuestsManager.OrderBase order, string message)
-        {
-            ServiceScope.Require();
-            PendingOrder.Arm(group, order, message);
-            GameMembers.Invoke(GuestsManager.instance, "GenerateOrderSession", group, true);
-        }
-
-        public void BeginOrderSession(
-            GuestGroupController group,
-            GuestsManager.OrderGenerationResult result,
-            GuestsManager.OrderBase order,
-            string message)
-        {
-            ServiceScope.Require();
-            PendingOrder.Arm(group, order, message);
-            // The order hook drops the pending order as soon as the game takes it, so the result is kept
-            // next to it for the whole session (see OrderHolds); the legacy overload arms no result.
-            PendingOrderResult.Arm(group, result);
-            GameMembers.Invoke(GuestsManager.instance, "GenerateOrderSession", group, true);
-        }
-
-        public void Evaluate(GuestGroupController group)
-        {
-            ServiceScope.Require();
-            // EvaluateOrder carries the SetEvaluationEnabled gate; the service's own evaluation bypasses it.
-            StockGate.Bypass(() => GuestsManager.instance.EvaluateOrder(group, false, null));
-        }
-    }
 
     private sealed class CookServices : IWorkSceneCook
     {

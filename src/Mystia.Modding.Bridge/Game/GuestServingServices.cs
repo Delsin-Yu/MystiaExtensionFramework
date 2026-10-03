@@ -1,128 +1,259 @@
+using System.Diagnostics.CodeAnalysis;
 using GameData.Core.Collections;
 using GameData.Core.Collections.NightSceneUtility;
-using Mystia.Listeners;
-using Mystia.Scenes;
 using NightScene.GuestManagementUtility;
 using NightScene.PartnerUtility;
 using NightScene.Tiles;
+using Mystia.Listeners;
+using Mystia.Scenes;
 
 namespace Mystia.Modding.Bridge;
 
 /// <summary>
-/// The serving half of <see cref="IWorkSceneGuests"/>.
+/// The <see cref="IWorkSceneGuests"/> of the running work scene: the switches that gate the game's own guest
+/// behaviour, the commands that drive one guest group, and the serving members.
 ///
-/// The scene's own guest services stay where they are: this class decorates them and answers the six
-/// serving members, so the work loop still receives one <c>IWorkSceneGuests</c>.
-/// Wire it inside <c>WorkSceneServices</c> as
-/// <c>public IWorkSceneGuests Guests { get; } = WorkSceneGuestServing.Extend(new GuestServices());</c>.
+/// Both halves live here — the scene's own guests and the serving decoration — so <c>WorkSceneServices</c> hands
+/// the work loop exactly one object. The engine controller stays this file's business: every member of the
+/// contract speaks handles and proxies (see <see cref="EntitySeams"/>), and a stale handle is refused instead of
+/// reaching a controller the game destroyed.
 /// </summary>
 internal sealed class WorkSceneGuestServing : IWorkSceneGuests
 {
-    private readonly IWorkSceneGuests _inner;
+    /// <summary>The instance the work scene services hand out as <c>Guests</c>.</summary>
+    internal static readonly WorkSceneGuestServing Shared = new();
 
-    private WorkSceneGuestServing(IWorkSceneGuests inner) => _inner = inner;
+    #region The switches
 
-    /// <summary>Wraps the scene's own guest services so the serving members land on the same object.</summary>
-    internal static IWorkSceneGuests Extend(IWorkSceneGuests inner)
+    public void SetSpawnEnabled(bool enabled)
     {
-        ArgumentNullException.ThrowIfNull(inner);
-        return new WorkSceneGuestServing(inner);
+        ServiceScope.Require();
+        NightScene.NightSceneDirector.instance.ShouldGuestSpawn(enabled);
     }
 
-    #region The members the scene's own guest services already answers
+    public void SetSeatingEnabled(bool enabled)
+    {
+        ServiceScope.Require();
+        StockGate.Seating = enabled;
+    }
 
-    public void SetSpawnEnabled(bool enabled) => _inner.SetSpawnEnabled(enabled);
+    public void SetLeaveEnabled(bool enabled)
+    {
+        ServiceScope.Require();
+        StockGate.Leave = enabled;
+    }
 
-    public void SetSeatingEnabled(bool enabled) => _inner.SetSeatingEnabled(enabled);
+    public void SetOrderingEnabled(bool enabled)
+    {
+        ServiceScope.Require();
+        StockGate.Order = enabled;
+    }
 
-    public void SetLeaveEnabled(bool enabled) => _inner.SetLeaveEnabled(enabled);
+    public void SetEvaluationEnabled(bool enabled)
+    {
+        ServiceScope.Require();
+        StockGate.Evaluation = enabled;
+    }
 
-    public void SetOrderingEnabled(bool enabled) => _inner.SetOrderingEnabled(enabled);
+    #endregion
 
-    public void SetEvaluationEnabled(bool enabled) => _inner.SetEvaluationEnabled(enabled);
+    #region Driving one group
 
-    public GuestGroupController SpawnNormal(IReadOnlyList<NormalGuest> guests, int desk = -1) =>
-        _inner.SpawnNormal(guests, desk);
+    public GuestHandle SpawnNormal(IReadOnlyList<GuestDescription> guests, int desk = -1)
+    {
+        ServiceScope.Require();
+        var resolved = GuestSpawnPipeline.Resolve(guests);
+        var native = new Il2CppSystem.Collections.Generic.List<NormalGuest>(resolved.Count);
+        foreach (var guest in resolved)
+            native.Add(guest);
+        var enumerable = (Il2CppSystem.Collections.Generic.IEnumerable<NormalGuest>)(object)native;
+        var group = GuestsManager.instance.SpawnNormalGuestGroup(enumerable, default, GuestGroupController.LeaveType.Move, desk, true);
+        return EntitySeams.GuestHandleOf(group);
+    }
 
-    public GuestGroupController SpawnSpecial(int guestId, int desk = -1) => _inner.SpawnSpecial(guestId, desk);
+    public GuestHandle SpawnSpecial(int guestId, int desk = -1)
+    {
+        ServiceScope.Require();
+        var group = GuestsManager.instance.SpawnSpecialGuestGroup(
+            guestId,
+            SpecialGuestsController.GuestSpawnType.Normal,
+            default,
+            null,
+            GuestGroupController.LeaveType.Move,
+            true,
+            desk,
+            false,
+            null,
+            true);
+        return EntitySeams.GuestHandleOf(group);
+    }
 
-    public bool Seat(GuestGroupController group, int desk, bool firstSpawn = true, int seat = -1) =>
-        _inner.Seat(group, desk, firstSpawn, seat);
+    public bool Seat(GuestHandle group, int desk, bool firstSpawn = true, int seat = -1)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native)
+            return false;
+        if (seat >= 0)
+            SeatChoice.Remember(native, seat);
+        var seated = false;
+        StockGate.Bypass(() => seated = GuestsManager.instance.TrySendToSeat(native, firstSpawn, desk, true));
+        return seated;
+    }
 
-    public GuestGroupController At(int desk) => _inner.At(desk);
+    public bool TryGetSeated(int desk, [NotNullWhen(true)] out GuestProxy? guest)
+    {
+        ServiceScope.Require();
+        guest = GuestDirectory.ProxyOf(GuestsManager.instance.GetInDeskGuest(desk));
+        return guest is not null;
+    }
 
-    public void Leave(GuestGroupController group, GuestLeaveKind kind) => _inner.Leave(group, kind);
+    public void Leave(GuestHandle group, GuestLeaveKind kind)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native)
+            return;
+        StockGate.Bypass(() => LeaveNow(native, kind));
+    }
 
-    public void SetPatience(GuestGroupController group, int value) => _inner.SetPatience(group, value);
+    public void SetPatience(GuestHandle group, int value)
+    {
+        ServiceScope.Require();
+        EntitySeams.GuestOf(group)?.SetPatient(value);
+    }
 
-    public void BeginOrderSession(GuestGroupController group) => _inner.BeginOrderSession(group);
+    public void BeginOrderSession(GuestHandle group)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native)
+            return;
+        StockGate.Bypass(() => GameMembers.Invoke(GuestsManager.instance, "GenerateOrderSession", native, true));
+    }
 
-    public void BeginOrderSession(GuestGroupController group, GuestsManager.OrderBase order, string message) =>
-        _inner.BeginOrderSession(group, order, message);
+    public void BeginOrderSession(GuestHandle group, OrderHandle order, string message)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native)
+            return;
+        if (EntitySeams.OrderOf(order) is not { } orderData)
+            return;
+        PendingOrder.Arm(native, orderData, message);
+        GameMembers.Invoke(GuestsManager.instance, "GenerateOrderSession", native, true);
+    }
 
-    public void BeginOrderSession(
-        GuestGroupController group,
-        GuestsManager.OrderGenerationResult result,
-        GuestsManager.OrderBase order,
-        string message) => _inner.BeginOrderSession(group, result, order, message);
+    public void BeginOrderSession(GuestHandle group, OrderGenerationOutcome result, OrderHandle order, string message)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native)
+            return;
+        if (EntitySeams.OrderOf(order) is not { } orderData)
+            return;
+        PendingOrder.Arm(native, orderData, message);
+        // The order hook drops the pending order as soon as the game takes it, so the result is kept
+        // next to it for the whole session (see OrderHolds); the legacy overload arms no result.
+        PendingOrderResult.Arm(native, Mirrors.ToGame(result));
+        GameMembers.Invoke(GuestsManager.instance, "GenerateOrderSession", native, true);
+    }
 
-    public void Evaluate(GuestGroupController group) => _inner.Evaluate(group);
+    public void Evaluate(GuestHandle group)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native)
+            return;
+        // EvaluateOrder carries the SetEvaluationEnabled gate; the service's own evaluation bypasses it.
+        StockGate.Bypass(() => GuestsManager.instance.EvaluateOrder(native, false, null));
+    }
+
+    private static void LeaveNow(GuestGroupController group, GuestLeaveKind kind)
+    {
+        var manager = GuestsManager.instance;
+        switch (kind)
+        {
+            case GuestLeaveKind.Paid:
+                manager.PayAndLeave(group, true);
+                break;
+            case GuestLeaveKind.ExBad:
+                GameMembers.Invoke(manager, "ExBadLeave", group);
+                break;
+            case GuestLeaveKind.RepelledPaid:
+                manager.RepellAndLeavePay(group, GuestGroupController.LeaveType.Move, true);
+                break;
+            case GuestLeaveKind.RepelledUnpaid:
+                manager.RepellAndLeaveNoPay(group, GuestGroupController.LeaveType.Move, true);
+                break;
+            case GuestLeaveKind.PlayerRepelled:
+                manager.PlayerRepell(group.DeskCode);
+                break;
+            case GuestLeaveKind.Patience:
+                GameMembers.Invoke(manager, "PatientDepletedLeave", group);
+                break;
+            case GuestLeaveKind.Other:
+                GameMembers.Invoke(manager, "LeaveFromDesk", group, GuestGroupController.LeaveType.Move, null, true);
+                break;
+        }
+    }
 
     #endregion
 
     #region Serving
 
-    public Sellable? ServeBeverage(GuestGroupController group, Sellable beverage)
+    public DishProxy? ServeBeverage(GuestHandle group, DishProxy beverage)
     {
         ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native || beverage.Native is not Sellable dish)
+            return null;
         Sellable? served = null;
         // GuestsManager.EvaluateOrder is the gated evaluation entry point (see SessionHolds); a beverage the
         // service itself serves must not be stopped by a switch the service is asked to respect elsewhere.
-        StockGate.Bypass(() => served = Serve(group, beverage));
-        return served;
+        StockGate.Bypass(() => served = Serve(native, dish));
+        return DishDirectory.ProxyOf(served);
     }
 
-    public void SetBeverageInAir(GuestGroupController group, Sellable? beverage)
+    public void SetBeverageInAir(GuestHandle group, DishProxy? beverage)
     {
         ServiceScope.Require();
-        var order = Pending(group);
-        if (order is null)
+        if (EntitySeams.GuestOf(group) is not { } native)
             return;
-        order.ServedBeverageInAir = beverage;
+        if (Pending(native) is not { } order)
+            return;
+        order.ServedBeverageInAir = beverage?.Native as Sellable;
     }
 
-    public void NotifyOrderStatusUpdate(GuestsManager.OrderBase order, PartnerManager.OrderChangeContext context, int index)
+    public void NotifyOrderStatusUpdate(OrderHandle order, PartnerOrderContext context, int index)
     {
         ServiceScope.Require();
-        PartnerManager.instance.OnOrderBaseStatusUpdate(order, context, index);
+        if (EntitySeams.OrderOf(order) is not { } native)
+            return;
+        PartnerManager.instance.OnOrderBaseStatusUpdate(native, Mirrors.ToGame(context), index);
     }
 
-    public IReadOnlyList<GuestGroupController> InDeskGuests
+    public IReadOnlyList<GuestHandle> InDeskGuests
     {
         get
         {
             ServiceScope.Require();
             // AllGuestInDeskController is an Il2Cpp IEnumerable over the live desk table; copy it into a
-            // managed list so the caller gets a stable, indexable view.
+            // managed list so the caller gets a stable, indexable view, and hand out handles rather than the
+            // controllers (a stale handle is refused, a kept controller is not).
             var native = new Il2CppSystem.Collections.Generic.List<GuestGroupController>(
                 GuestsManager.instance.AllGuestInDeskController);
-            var guests = new List<GuestGroupController>(native.Count);
+            var guests = new List<GuestHandle>(native.Count);
             for (var index = 0; index < native.Count; index++)
-                guests.Add(native[index]);
+                guests.Add(EntitySeams.GuestHandleOf(native[index]));
             return guests;
         }
     }
 
-    public GuestsManager.OrderBase? PendingOrder(GuestGroupController group)
+    public bool TryGetPendingOrder(GuestHandle group, [NotNullWhen(true)] out OrderProxy? order)
     {
         ServiceScope.Require();
-        return Pending(group);
+        order = EntitySeams.GuestOf(group) is { } native ? OrderDirectory.ProxyOf(Pending(native)) : null;
+        return order is not null;
     }
 
-    public bool IsOrderFullfilled(GuestsManager.OrderBase order)
+    public bool IsOrderFullfilled(OrderHandle order)
     {
         ServiceScope.Require();
-        return order.IsFullfilled;
+        return EntitySeams.OrderOf(order) is { IsFullfilled: true };
     }
 
     /// <summary>The order a group is still considering, or null when it has none (PeekOrders on an empty

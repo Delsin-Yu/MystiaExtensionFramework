@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 using Mystia.Assets;
 using Mystia.Numerics;
 
@@ -90,10 +92,36 @@ public interface IPresentationServices
     /// <summary>
     /// Wraps the character a mod is already working with — the character unit itself, its game object, or any
     /// component on it — into the opaque handle <see cref="ApplyCharacterSprite"/> takes. Main thread only.
+    /// <para>
+    /// This is the untyped entry: it takes <see cref="object"/> because the character of a mod's own object (a
+    /// day scene unit it was handed, a partner, an object it built) has no framework entity to be named by yet.
+    /// For a character that belongs to a guest of the running night, use
+    /// <see cref="TryBindCharacter(GuestHandle, int, out CharacterHandle?)"/> instead: it names the character
+    /// through the guest handle and cannot be handed something that is not one.
+    /// </para>
     /// </summary>
     /// <param name="character">The character to wrap.</param>
     /// <returns>The handle, or null when <paramref name="character"/> carries no character.</returns>
     CharacterHandle? BindCharacter(object character) => null;
+
+    /// <summary>
+    /// Wraps the character of one guest of a group — the character the game walks to the desk — into the opaque
+    /// handle <see cref="ApplyCharacterSprite"/> takes. Main thread only. This is the typed counterpart of
+    /// <see cref="BindCharacter"/>: the character is named by the group's handle and its index inside the group,
+    /// so no untyped object crosses the contract.
+    /// </summary>
+    /// <param name="guest">The guest group the character belongs to.</param>
+    /// <param name="index">The character inside the group; a group of two normal guests has two.</param>
+    /// <param name="character">The handle, when the call answers true.</param>
+    /// <returns>
+    /// False when the handle is stale (its night ended), the index is out of range, or the character carries no
+    /// character unit.
+    /// </returns>
+    bool TryBindCharacter(GuestHandle guest, int index, [NotNullWhen(true)] out CharacterHandle? character)
+    {
+        character = null;
+        return false;
+    }
 
     /// <summary>
     /// Puts a character pixel sprite set (<c>IAssetFactory.TryCreateCharacterSpriteSet</c>) on a character. A

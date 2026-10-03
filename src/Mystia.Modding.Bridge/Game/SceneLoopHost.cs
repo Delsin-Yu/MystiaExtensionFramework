@@ -61,6 +61,10 @@ internal static class SceneLoopHost
         // The shutdown callbacks still ran inside the scene session; the session ends once they are done, so
         // the routines bound to it stop on the next pump tick.
         CoroutinePump.LeaveScene();
+        // The same boundary ends the scene's entity session: every guest, order and dish handle minted in it
+        // stops resolving here, so a handle a mod kept past its night is refused instead of naming an engine
+        // object the game already destroyed (see Mystia.Scenes.EntitySession).
+        EntitySession.Rotate();
     }
 
     private static void Run(SceneId scene, Phase phase, float delta)

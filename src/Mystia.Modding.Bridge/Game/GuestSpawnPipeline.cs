@@ -13,7 +13,37 @@ namespace Mystia.Modding.Bridge;
 
 internal static class GuestSpawnPipeline
 {
-    internal static void ApplyNormal(ref List<NormalGuest> guests)
+    /// <summary>The rolled guests of one group, as the framework's own descriptions.</summary>
+    internal static List<GuestDescription> Describe(IEnumerable? guests)
+    {
+        var descriptions = new List<GuestDescription>();
+        if (guests is null)
+            return descriptions;
+        foreach (var item in guests)
+        {
+            if (item is NormalGuest guest)
+                descriptions.Add(new GuestDescription(guest.id));
+        }
+
+        return descriptions;
+    }
+
+    /// <summary>The descriptions every modifier left behind, resolved back to the game's own guests.</summary>
+    internal static List<NormalGuest> Resolve(IReadOnlyList<GuestDescription> guests)
+    {
+        var resolved = new List<NormalGuest>(guests.Count);
+        foreach (var description in guests)
+        {
+            if (Resolve(description) is { } guest)
+                resolved.Add(guest);
+            else
+                Report(description);
+        }
+
+        return resolved;
+    }
+
+    internal static void ApplyNormal(ref List<GuestDescription> guests)
     {
         foreach (var modifier in Dispatch.Instances<IGuestSpawnModifier>())
             modifier.OnNormalGuestsGenerating(ref guests);
@@ -45,6 +75,31 @@ internal static class GuestSpawnPipeline
             modifier.OnNormalGuestVisual(guestId, ref visualIndex);
     }
 
+    /// <summary>
+    /// The game's own guest behind one description, or null when the database does not carry its id: nothing
+    /// can spawn a guest the game has no record of, so such a description is reported and dropped rather than
+    /// handed to the spawn call.
+    /// </summary>
+    private static NormalGuest? Resolve(GuestDescription description)
+    {
+        if (description.IsEmpty)
+            return null;
+        var guests = DataBaseCharacter.NormalGuest;
+        if (guests is null)
+            return null;
+        return guests.TryGetValue(description.Id, out var guest) ? guest : null;
+    }
+
+    private static void Report(GuestDescription description)
+    {
+        if (!_reported.Add(description.Id))
+            return;
+        GameBridgeHook.Trace($"GuestSpawnPipeline: no normal guest {description.Id} in the character database; the description was dropped.");
+    }
+
+    // One report per id, so a modifier that returns an unknown guest from its update path cannot flood the log.
+    private static readonly HashSet<int> _reported = [];
+
     internal static GuestProfilePair BuildVisual(int id, int index)
     {
         var type = typeof(DataBaseCharacter);
@@ -75,19 +130,10 @@ internal static class GuestSpawnSeams
     {
         private static void Postfix(ref Il2CppSystem.Collections.Generic.IEnumerable<NormalGuest> __result)
         {
-            var guests = new List<NormalGuest>();
-            if (__result is not null)
-            {
-                foreach (var item in (System.Collections.IEnumerable)__result)
-                {
-                    if (item is NormalGuest guest)
-                        guests.Add(guest);
-                }
-            }
-
+            var guests = GuestSpawnPipeline.Describe((System.Collections.IEnumerable?)__result);
             GuestSpawnPipeline.ApplyNormal(ref guests);
             var native = new Il2CppSystem.Collections.Generic.List<NormalGuest>(guests.Count);
-            foreach (var guest in guests)
+            foreach (var guest in GuestSpawnPipeline.Resolve(guests))
                 native.Add(guest);
             __result = (Il2CppSystem.Collections.Generic.IEnumerable<NormalGuest>)(object)native;
         }

@@ -46,6 +46,13 @@ public interface ICommonServices
     IAssetLocator Locator { get; }
 
     /// <summary>
+    /// Builds the game data objects a mod ships — dialog packages and scheduler (mission and event) nodes — from
+    /// the descriptions in <see cref="Mystia.Assets"/>. A built object is published by the framework into the
+    /// game's own tables, so a mod ships the data and the framework owns the engine objects. Main thread only.
+    /// </summary>
+    IGameDataBuilder DataObjects => throw new NotSupportedException();
+
+    /// <summary>
     /// Builds and publishes the day scene maps a mod ships. A map is the one asset a mod cannot reach the
     /// pipeline with on its own - the game loads it by instantiating a template the pipeline resolves - so the
     /// builder assembles that template out of a description and writes the map into the day scene's own

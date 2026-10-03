@@ -183,7 +183,7 @@ internal static class ServeCallbackSeams
             if (order is null || !Dispatch.Instances<IWorkListener>().Any())
                 return;
 
-            var callbacks = new ServeCallbackView(order, currentGuestController);
+            var callbacks = new ServeCallbackView(OrderDirectory.ProxyOf(order)!, GuestDirectory.ProxyOf(currentGuestController));
             onOrderEvaluate = Evaluate(callbacks, ServeCallbackKind.OrderEvaluate, onOrderEvaluate);
             onRecoverPatient = Patient(callbacks, ServeCallbackKind.PatientRecover, onRecoverPatient);
             onFoodDelieverStatusUpdated = DeliverStatus(callbacks, ServeCallbackKind.FoodDeliverStatusUpdated, onFoodDelieverStatusUpdated);

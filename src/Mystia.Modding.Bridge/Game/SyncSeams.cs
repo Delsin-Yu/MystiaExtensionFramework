@@ -117,13 +117,13 @@ internal static class GuestPostEvaluationSeams
     private static class NormalPostEvaluated
     {
         private static void Postfix(GuestGroupController __instance, GuestGroupController.EvaluationResult evaluationType) =>
-            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupPostEvaluated(__instance, evaluationType));
+            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupPostEvaluated(EntitySeams.GuestHandleOf(__instance), Mirrors.ToSdk(evaluationType)));
     }
 
     [HarmonyPatch(typeof(SpecialGuestsController), nameof(SpecialGuestsController.PostEvaluation))]
     private static class SpecialPostEvaluated
     {
         private static void Postfix(GuestGroupController __instance, GuestGroupController.EvaluationResult evaluationType) =>
-            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupPostEvaluated(__instance, evaluationType));
+            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupPostEvaluated(EntitySeams.GuestHandleOf(__instance), Mirrors.ToSdk(evaluationType)));
     }
 }

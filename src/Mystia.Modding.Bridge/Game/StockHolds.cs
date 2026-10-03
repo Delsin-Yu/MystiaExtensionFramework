@@ -103,7 +103,7 @@ internal static class LeaveHolds
         private static void Postfix(GuestGroupController toLeave, int __state)
         {
             if (LeaveDispatch.Exit(__state))
-                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toLeave, GuestLeaveKind.Other));
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(EntitySeams.GuestHandleOf(toLeave), GuestLeaveKind.Other));
         }
 
         private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);

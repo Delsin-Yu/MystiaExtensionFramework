@@ -1,6 +1,7 @@
 using HarmonyLib;
 using Mystia.Listeners;
 using NightScene.GuestManagementUtility;
+using Mystia.Scenes;
 using UnityEngine;
 
 namespace Mystia.Modding.Bridge;
@@ -53,8 +54,11 @@ internal static class GuestGroupListenerSeams
             ref GuestsManager.OrderBase orderData
         )
         {
+            OrderHandle? order = EntitySeams.OrderHandleOf(orderData);
             foreach (var listener in Dispatch.Instances<IGuestGroupListener>())
-                listener.OnGroupOrderGenerated(toGenerate, __result, ref orderData);
+                listener.OnGroupOrderGenerated(EntitySeams.GuestHandleOf(toGenerate), Mirrors.ToSdk(__result), ref order);
+            if (EntitySeams.OrderOf(order) is { } replacement && !ReferenceEquals(replacement, orderData))
+                orderData = replacement;
         }
     }
 
@@ -62,7 +66,7 @@ internal static class GuestGroupListenerSeams
     private static class Arrived
     {
         private static void Postfix(GuestGroupController __instance) =>
-            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupArrived(__instance));
+            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupArrived(EntitySeams.GuestHandleOf(__instance)));
     }
 
     [HarmonyPatch(typeof(GuestGroupController), nameof(GuestGroupController.MoveToDesk))]
@@ -71,13 +75,13 @@ internal static class GuestGroupListenerSeams
         // Same method also carries SeatSeams.Move, which rewrites the seat and skips the original
         // when a seat choice is pending.
         private static void Prefix(GuestGroupController __instance, int deskCode) =>
-            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupMovingToDesk(__instance, deskCode));
+            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupMovingToDesk(EntitySeams.GuestHandleOf(__instance), deskCode));
     }
 
     [HarmonyPatch(typeof(GuestGroupController), nameof(GuestGroupController.MoveToQueue))]
     private static class Queued
     {
         private static void Postfix(GuestGroupController __instance) =>
-            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupQueued(__instance));
+            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupQueued(EntitySeams.GuestHandleOf(__instance)));
     }
 }

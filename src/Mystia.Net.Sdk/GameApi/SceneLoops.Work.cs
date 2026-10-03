@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 using Common.TimelineExtestion;
 using Common.UI;
 using Common.UI.GlobalMap;
@@ -59,6 +61,16 @@ public interface IWorkSceneServices
     IPresentationServices Presentation { get; }
 }
 
+/// <summary>
+/// The guests of the running work scene: the switches that gate the game's own guest behaviour, the commands
+/// that drive one guest group, and the serving members.
+/// <para>
+/// A group is named by its <see cref="GuestHandle"/> and a dish by its <see cref="DishProxy"/> — never by the
+/// game's controller, order or sellable. A query answers through <c>TryGet</c> when it may find nothing, and
+/// every handle it hands back is minted for the running scene session, so a stale one is refused by its own
+/// <c>TryGet</c>.
+/// </para>
+/// </summary>
 public interface IWorkSceneGuests
 {
     void SetSpawnEnabled(bool enabled);
@@ -71,25 +83,30 @@ public interface IWorkSceneGuests
 
     void SetEvaluationEnabled(bool enabled);
 
-    GuestGroupController SpawnNormal(IReadOnlyList<NormalGuest> guests, int desk = -1);
+    /// <summary>Spawns one group of normal guests; the return names the new group.</summary>
+    GuestHandle SpawnNormal(IReadOnlyList<GuestDescription> guests, int desk = -1);
 
-    GuestGroupController SpawnSpecial(int guestId, int desk = -1);
+    /// <summary>Spawns one special guest by id; the return names the new group.</summary>
+    GuestHandle SpawnSpecial(int guestId, int desk = -1);
 
-    bool Seat(GuestGroupController group, int desk, bool firstSpawn = true, int seat = -1);
+    bool Seat(GuestHandle group, int desk, bool firstSpawn = true, int seat = -1);
 
-    GuestGroupController At(int desk);
+    /// <summary>The group sitting at a desk, or false when the desk is empty.</summary>
+    /// <param name="desk">The desk to look at.</param>
+    /// <param name="guest">The seated group, when the call answers true.</param>
+    bool TryGetSeated(int desk, [NotNullWhen(true)] out GuestProxy? guest);
 
-    void Leave(GuestGroupController group, GuestLeaveKind kind);
+    void Leave(GuestHandle group, GuestLeaveKind kind);
 
-    void SetPatience(GuestGroupController group, int value);
+    void SetPatience(GuestHandle group, int value);
 
-    void BeginOrderSession(GuestGroupController group);
+    void BeginOrderSession(GuestHandle group);
 
-    void BeginOrderSession(GuestGroupController group, GuestsManager.OrderBase order, string message);
+    void BeginOrderSession(GuestHandle group, OrderHandle order, string message);
 
-    void BeginOrderSession(GuestGroupController group, GuestsManager.OrderGenerationResult result, GuestsManager.OrderBase order, string message);
+    void BeginOrderSession(GuestHandle group, OrderGenerationOutcome result, OrderHandle order, string message);
 
-    void Evaluate(GuestGroupController group);
+    void Evaluate(GuestHandle group);
 
     // Bridge implemented members; the default bodies throw until the bridge wiring lands, so an unwired
     // member fails loudly instead of silently doing nothing.
@@ -99,22 +116,24 @@ public interface IWorkSceneGuests
     /// landing spot is re-checked and the order is evaluated when it becomes full). Returns the beverage that
     /// was actually registered on the order, or null when the serve was dropped.
     /// </summary>
-    Sellable? ServeBeverage(GuestGroupController group, Sellable beverage) => throw new NotSupportedException();
+    DishProxy? ServeBeverage(GuestHandle group, DishProxy beverage) => throw new NotSupportedException();
 
     /// <summary>Marks a beverage as being thrown to a group, or clears that mark with null.</summary>
-    void SetBeverageInAir(GuestGroupController group, Sellable? beverage) => throw new NotSupportedException();
+    void SetBeverageInAir(GuestHandle group, DishProxy? beverage) => throw new NotSupportedException();
 
     /// <summary>Tells the partners that an order changed status (the same call the game's own serving makes).</summary>
-    void NotifyOrderStatusUpdate(GuestsManager.OrderBase order, PartnerManager.OrderChangeContext context, int index) => throw new NotSupportedException();
+    void NotifyOrderStatusUpdate(OrderHandle order, PartnerOrderContext context, int index) => throw new NotSupportedException();
 
-    /// <summary>The guest groups currently seated at a desk.</summary>
-    IReadOnlyList<GuestGroupController> InDeskGuests => throw new NotSupportedException();
+    /// <summary>The guest groups currently seated at a desk, in the game's own order.</summary>
+    IReadOnlyList<GuestHandle> InDeskGuests => throw new NotSupportedException();
 
-    /// <summary>The order a group is currently considering; null when it has none.</summary>
-    GuestsManager.OrderBase? PendingOrder(GuestGroupController group) => throw new NotSupportedException();
+    /// <summary>The order a group is currently considering, or false when it has none.</summary>
+    /// <param name="group">The group to look at.</param>
+    /// <param name="order">The pending order, when the call answers true.</param>
+    bool TryGetPendingOrder(GuestHandle group, [NotNullWhen(true)] out OrderProxy? order) => throw new NotSupportedException();
 
     /// <summary>Whether both the dish and the beverage of an order have been served.</summary>
-    bool IsOrderFullfilled(GuestsManager.OrderBase order) => throw new NotSupportedException();
+    bool IsOrderFullfilled(OrderHandle order) => throw new NotSupportedException();
 }
 
 public interface IWorkSceneCook

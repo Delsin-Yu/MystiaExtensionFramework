@@ -14,6 +14,12 @@ namespace Mystia.Scenes;
 // gave it; ServeCallbackView is the exception and stays valid for the whole opening it stands for.
 
 /// <summary>The work scene serve panel of one desk.</summary>
+/// <remarks>
+/// The panel's guest, order and two pending slots are handed out as the framework's own entities
+/// (<see cref="GuestProxy"/>, <see cref="OrderProxy"/>, <see cref="DishProxy"/>), never as the game's
+/// controller, order or sellable, so a mod that acts on the panel names no game type to do it. The handles of
+/// those proxies are minted for the night the panel is open in, which is also how long the panel itself lives.
+/// </remarks>
 public sealed class ServePannelView
 {
     private readonly WorkSceneServePannel _panel;
@@ -21,39 +27,42 @@ public sealed class ServePannelView
     internal ServePannelView(WorkSceneServePannel panel) => _panel = panel;
 
     /// <summary>The guest group the panel serves; null while the panel has no guest.</summary>
-    public GuestGroupController Guest => _panel.currentGuestController;
+    public GuestProxy? Guest => GuestDirectory.ProxyOf(_panel.currentGuestController);
 
-    public GuestsManager.OrderBase Order => _panel.operatingOrder;
+    /// <summary>The order the panel serves; null while the panel has no order.</summary>
+    public OrderProxy? Order => OrderDirectory.ProxyOf(_panel.operatingOrder);
 
     /// <summary>The desk the panel serves, or -1 when the panel has neither guest nor order.</summary>
     public int DeskCode => _panel.currentGuestController?.DeskCode ?? _panel.operatingOrder?.DeskCode ?? -1;
 
     /// <summary>The dish taken off the tray and waiting for confirmation; null means none.</summary>
-    public Sellable? PendingFood
+    public DishProxy? PendingFood
     {
-        get => _panel.willServeFood;
-        set => _panel.willServeFood = value;
+        get => DishDirectory.ProxyOf(_panel.willServeFood);
+        set => _panel.willServeFood = (Sellable?)value?.Native;
     }
 
     /// <summary>The beverage taken off the tray and waiting for confirmation; null means none.</summary>
-    public Sellable? PendingBeverage
+    public DishProxy? PendingBeverage
     {
-        get => _panel.willServeBeverage;
-        set => _panel.willServeBeverage = value;
+        get => DishDirectory.ProxyOf(_panel.willServeBeverage);
+        set => _panel.willServeBeverage = (Sellable?)value?.Native;
     }
 
     /// <summary>Renders both pending slots: a filled slot shows its icon as cancellable, an empty one is cleared.</summary>
     public void RefreshPendingVisual()
     {
-        if (PendingFood is null)
+        var food = (Sellable?)PendingFood?.Native;
+        var beverage = (Sellable?)PendingBeverage?.Native;
+        if (food is null)
             _panel.ResetServedVisualOnUI(_panel.servFood, _panel.servFoodOutline);
         else
-            _panel.SetServedVisualOnUI(_panel.servFood, _panel.servFoodOutline, PendingFood, true);
+            _panel.SetServedVisualOnUI(_panel.servFood, _panel.servFoodOutline, food, true);
 
-        if (PendingBeverage is null)
+        if (beverage is null)
             _panel.ResetServedVisualOnUI(_panel.servBev, _panel.servBevOutline);
         else
-            _panel.SetServedVisualOnUI(_panel.servBev, _panel.servBevOutline, PendingBeverage, true);
+            _panel.SetServedVisualOnUI(_panel.servBev, _panel.servBevOutline, beverage, true);
     }
 
     /// <summary>Drops both pending slots and clears their visuals.</summary>
@@ -177,17 +186,17 @@ public enum ServeCallbackKind
 /// </summary>
 public sealed class ServeCallbackView
 {
-    internal ServeCallbackView(GuestsManager.OrderBase order, GuestGroupController? guest)
+    internal ServeCallbackView(OrderProxy order, GuestProxy? guest)
     {
         Order = order;
         Guest = guest;
     }
 
     /// <summary>The order the callbacks were registered for.</summary>
-    public GuestsManager.OrderBase Order { get; }
+    public OrderProxy Order { get; }
 
     /// <summary>The guest group the callbacks were registered for; null when the call did not carry one.</summary>
-    public GuestGroupController? Guest { get; }
+    public GuestProxy? Guest { get; }
 
     /// <summary>The desk of <see cref="Order"/>.</summary>
     public int DeskCode => Order.DeskCode;

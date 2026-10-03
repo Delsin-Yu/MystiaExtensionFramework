@@ -93,9 +93,11 @@ internal static class GuestSpawnRequestSeams
         new()
         {
             // The interop proxy is a reference type, so an absent position arrives as a null or as a wrapper
-            // without a value.
-            SpawnPosition = spawnPosition is not null && spawnPosition.HasValue ? spawnPosition.Value : null,
-            LeaveType = leaveType,
+            // without a value; the request carries the mirror value so a listener never names the engine type.
+            SpawnPosition = spawnPosition is not null && spawnPosition.HasValue
+                ? new Mystia.Numerics.Vector3(spawnPosition.Value.x, spawnPosition.Value.y, spawnPosition.Value.z)
+                : null,
+            LeaveType = Mirrors.ToSdk(leaveType),
             DeskCode = deskCode,
             Fade = fade,
         };
@@ -110,9 +112,12 @@ internal static class GuestSpawnRequestSeams
         // An absent position goes back as a null reference, which is what the services' own spawns pass
         // (SpawnNormal/SpawnSpecial hand in default) and what the game reads as "pick the spawn spot".
         spawnPosition = request.SpawnPosition.HasValue
-            ? new Il2CppSystem.Nullable<Vector3>(request.SpawnPosition.Value)
+            ? new Il2CppSystem.Nullable<Vector3>(new Vector3(
+                request.SpawnPosition.Value.X,
+                request.SpawnPosition.Value.Y,
+                request.SpawnPosition.Value.Z))
             : null!;
-        leaveType = request.LeaveType;
+        leaveType = Mirrors.ToGame(request.LeaveType);
         deskCode = request.DeskCode;
         fade = request.Fade;
     }

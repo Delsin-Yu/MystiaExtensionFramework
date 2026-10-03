@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using GameData.Core.Collections.NightSceneUtility;
 using NightScene.GuestManagementUtility;
 using Mystia.Modding.Bridge;
@@ -84,9 +84,7 @@ public sealed class HostAndGuardTests
     private sealed class SpawnListener(Action seen)
         : IGuestGroupListener
     {
-        public void OnGroupSpawned(
-            NightScene.GuestManagementUtility.GuestGroupController group,
-            GuestSpawnRequest request) => seen();
+        public void OnGroupSpawned(GuestHandle group, GuestSpawnRequest request) => seen();
     }
 
     private sealed class ClaimingDirector : IGuestDirector
@@ -196,15 +194,15 @@ public sealed class HostAndGuardTests
     [Fact]
     public void NormalGuestModifierPassesTheSameListThroughModOrder()
     {
-        var replacement = new List<NormalGuest>();
-        List<NormalGuest>? seen = null;
+        var replacement = new List<GuestDescription>();
+        List<GuestDescription>? seen = null;
         var registry = new ModRegistry();
         registry.Add<IGuestSpawnModifier>(new ReplacingSpawnModifier(replacement));
         registry.Add<IGuestSpawnModifier>(new ReadingSpawnModifier(list => seen = list));
         BridgeInstaller.Bind(registry);
         try
         {
-            var guests = new List<NormalGuest>();
+            var guests = new List<GuestDescription>();
             GuestSpawnPipeline.ApplyNormal(ref guests);
             Assert.Same(replacement, guests);
             Assert.Same(replacement, seen);
@@ -240,16 +238,16 @@ public sealed class HostAndGuardTests
         }
     }
 
-    private sealed class ReplacingSpawnModifier(List<NormalGuest> replacement)
+    private sealed class ReplacingSpawnModifier(List<GuestDescription> replacement)
         : IGuestSpawnModifier
     {
-        public void OnNormalGuestsGenerating(ref List<NormalGuest> guests) => guests = replacement;
+        public void OnNormalGuestsGenerating(ref List<GuestDescription> guests) => guests = replacement;
     }
 
-    private sealed class ReadingSpawnModifier(Action<List<NormalGuest>> read)
+    private sealed class ReadingSpawnModifier(Action<List<GuestDescription>> read)
         : IGuestSpawnModifier
     {
-        public void OnNormalGuestsGenerating(ref List<NormalGuest> guests) => read(guests);
+        public void OnNormalGuestsGenerating(ref List<GuestDescription> guests) => read(guests);
     }
 
     [Fact]
@@ -304,7 +302,7 @@ public sealed class HostAndGuardTests
         BridgeInstaller.Bind(registry);
         try
         {
-            GuestsManager.OrderBase order = null!;
+            OrderHandle? order = null;
             var message = "tonight";
             GuestPipeline.RunOrder(null!, ref order, ref message);
             Assert.Equal("tonight", seen);
@@ -358,7 +356,7 @@ public sealed class HostAndGuardTests
     private sealed class MessageOrderListener(Action<string> seen)
         : IGuestGroupListener
     {
-        public void OnGroupOrdered(GuestGroupController group, ref GuestsManager.OrderBase order, ref string message)
+        public void OnGroupOrdered(GuestHandle group, ref OrderHandle? order, ref string message)
         {
             seen(message);
             message = "kept";

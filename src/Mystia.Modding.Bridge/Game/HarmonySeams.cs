@@ -435,7 +435,7 @@ internal static class GuestSeams
         private static void Postfix(GuestGroupController toTry, bool __result)
         {
             if (__result)
-                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupSeated(toTry, toTry.DeskCode));
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupSeated(EntitySeams.GuestHandleOf(toTry), toTry.DeskCode));
         }
     }
 
@@ -443,7 +443,7 @@ internal static class GuestSeams
     private static class ManualSeat
     {
         private static void Postfix(GuestGroupController manualControlled, int deskCode) =>
-            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupSeated(manualControlled, deskCode));
+            Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupSeated(EntitySeams.GuestHandleOf(manualControlled), deskCode));
     }
 
     [HarmonyPatch(typeof(GuestGroupController), nameof(GuestGroupController.GenerateOrder))]
@@ -453,7 +453,12 @@ internal static class GuestSeams
         {
             if (generatedOrder is null)
                 return;
-            GuestPipeline.RunOrder(__instance, ref generatedOrder, ref orderGenerationMessage);
+            // The order the listeners are asked about travels by handle; the handle they leave behind is what
+            // the game takes, so a listener that replaces it (a replayed order) replaces it here.
+            OrderHandle? order = OrderDirectory.Track(generatedOrder);
+            GuestPipeline.RunOrder(__instance, ref order, ref orderGenerationMessage);
+            if (EntitySeams.OrderOf(order) is { } replacement && !ReferenceEquals(replacement, generatedOrder))
+                generatedOrder = replacement;
         }
     }
 
@@ -500,7 +505,7 @@ internal static class GuestSeams
         private static void Postfix(GuestGroupController toPayAndLeave, int __state)
         {
             if (LeaveDispatch.Exit(__state))
-                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toPayAndLeave, GuestLeaveKind.Paid));
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(EntitySeams.GuestHandleOf(toPayAndLeave), GuestLeaveKind.Paid));
         }
 
         private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
@@ -518,7 +523,7 @@ internal static class GuestSeams
         private static void Postfix(GuestGroupController toExBadLeave, int __state)
         {
             if (LeaveDispatch.Exit(__state))
-                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toExBadLeave, GuestLeaveKind.ExBad));
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(EntitySeams.GuestHandleOf(toExBadLeave), GuestLeaveKind.ExBad));
         }
 
         private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
@@ -536,7 +541,7 @@ internal static class GuestSeams
         private static void Postfix(GuestGroupController toRepell, int __state)
         {
             if (LeaveDispatch.Exit(__state))
-                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toRepell, GuestLeaveKind.RepelledPaid));
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(EntitySeams.GuestHandleOf(toRepell), GuestLeaveKind.RepelledPaid));
         }
 
         private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
@@ -554,7 +559,7 @@ internal static class GuestSeams
         private static void Postfix(GuestGroupController toRepell, int __state)
         {
             if (LeaveDispatch.Exit(__state))
-                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toRepell, GuestLeaveKind.RepelledUnpaid));
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(EntitySeams.GuestHandleOf(toRepell), GuestLeaveKind.RepelledUnpaid));
         }
 
         private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
@@ -578,7 +583,7 @@ internal static class GuestSeams
             _repelled = null;
             var report = LeaveDispatch.Exit(__state);
             if (report && group is not null)
-                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(group, GuestLeaveKind.PlayerRepelled));
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(EntitySeams.GuestHandleOf(group), GuestLeaveKind.PlayerRepelled));
         }
 
         private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
@@ -596,7 +601,7 @@ internal static class GuestSeams
         private static void Postfix(GuestGroupController toPatientDepletedLeave, int __state)
         {
             if (LeaveDispatch.Exit(__state))
-                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(toPatientDepletedLeave, GuestLeaveKind.Patience));
+                Dispatch.Run<IGuestGroupListener>(listener => listener.OnGroupLeft(EntitySeams.GuestHandleOf(toPatientDepletedLeave), GuestLeaveKind.Patience));
         }
 
         private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
@@ -619,12 +624,12 @@ internal static class GuestSeams
             return;
         if (peek.Invoke(stack, null) is not GuestsManager.OrderBase previous)
             return;
-        var current = previous;
+        OrderHandle? current = EntitySeams.OrderHandleOf(previous);
         var message = "";
         GuestPipeline.RunOrder(group, ref current, ref message);
-        if (ReferenceEquals(current, previous))
+        if (EntitySeams.OrderOf(current) is not { } replacement || ReferenceEquals(replacement, previous))
             return;
         pop.Invoke(stack, null);
-        push.Invoke(stack, [current]);
+        push.Invoke(stack, [replacement]);
     }
 }

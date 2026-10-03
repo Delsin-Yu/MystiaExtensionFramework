@@ -1,59 +1,20 @@
-﻿using Il2CppInterop.Runtime.InteropTypes;
-
-using UnityEngine;
+using Mystia.Imgui;
 
 namespace Mystia;
 
+// A mod that wants IMGUI implements this and the framework draws it: the drawer it receives is the whole
+// engine free surface of Mystia.Imgui, so the mod never names UnityEngine itself.
+/// <summary>
+/// A mod's IMGUI entry point. The framework calls <see cref="OnGui"/> once for every IMGUI event of every
+/// frame while the mod's screens are up, on the main thread, and hands it the drawer to draw with.
+/// </summary>
 [AutoWire]
 public interface IIMGUIProvider
 {
+    /// <summary>
+    /// Draws the mod's panel for the event being handled. The call may only touch the drawer it is given and
+    /// only for the length of the call; the drawer outlives it, so a mod may keep it but not the rectangle
+    /// state of the pass it arrived in.
+    /// </summary>
     void OnGui(IIMGUIDrawer drawer);
-}
-
-// Drawing surface for mods that want IMGUI without touching UnityEngine directly.
-// Only members that exist in the game build are exposed: the name based focus API
-// (SetNextControlName / FocusControl / GetNameOfFocusedControl) is not part of that build,
-// so focus is handled through KeyboardControl.
-public interface IIMGUIDrawer
-{
-    Vector2 ScreenSize { get; }
-
-    Color Color { get; set; }
-
-    GUISkin Skin { get; }
-
-    Event Current { get; }
-
-    int KeyboardControl { get; set; }
-
-    /// <summary>Control id created by the most recent control drawn through this drawer.</summary>
-    int LastControlId { get; }
-
-    void Label(Rect position, string text);
-
-    void Label(Rect position, string text, GUIStyle style);
-
-    bool Button(Rect position, string text);
-
-    bool Button(Rect position, string text, GUIStyle style);
-
-    string TextField(Rect position, string text);
-
-    string TextField(Rect position, string text, GUIStyle style);
-
-    void DrawTexture(Rect position, Texture image, ScaleMode scaleMode, bool alphaBlend);
-
-    Vector2 BeginScrollView(Rect position, Vector2 scrollPosition, Rect viewRect);
-
-    void EndScrollView();
-
-    void BeginHorizontal();
-
-    void EndHorizontal();
-
-    void BeginVertical();
-
-    void EndVertical();
-
-    T GetStateObject<T>(int id) where T : Il2CppObjectBase;
 }

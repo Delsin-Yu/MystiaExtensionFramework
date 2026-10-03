@@ -12,18 +12,51 @@ Design rules applied here:
 
 ## Host capabilities
 
-`ICommonServices` gains members that are valid outside any scene loop:
+The capabilities are split in two layers by *when* a member is valid.
+
+`ICommonServices` holds what a mod may use **at any time**: from a global loop, from a scene loop and from a
+background thread.
 
 ```csharp
-ICoroutineDispatcher Coroutines { get; }
-IModStorage Storage { get; }          // OpenRead / OpenWrite / OpenText / CreateText / Exists / Delete(relativePath)
+IMainThreadScheduler MainThread { get; }   // runs the action on the game's main thread
+ICoroutineDispatcher Coroutines { get; }   // process level: its routines outlive a scene change
+IPlatformInfo Platform { get; }            // KeysResolved / ActiveDlcKeys
+IDialogCatalog Dialogs { get; }            // enumerate package names, resolve a name to a DialogPackage
+IGuestRecords Records { get; }             // RecordInvited / HasInvited / IsIgnored / Reset
+void LoadScene(Scene scene);
+void OpenDialog(DialogPackage dialog, Action onFinished);
+void OpenDialog(DialogPackage dialog, Action onFinished, Action<Il2CppSystem.Collections.Generic.Dictionary<int, string>>? replaceText);
+void FadeIn(Action onFinished);
+void FadeOut(Action onFinished);
+void SetInputEnabled(bool enabled);
+void SetNightTransitionEnabled(bool enabled);
+string FoodTagText(int tagId);
+string EvaluationText(int evaluation);
+```
+
+The per-mod capabilities are not host capabilities, so they live on `IMod` alongside the module identity:
+
+```csharp
+IModStorage Storage { get; }   // OpenRead / OpenWrite / OpenText / CreateText / Exists / Delete(relativePath)
 ILog Log { get; }
-IDialogCatalog Dialogs { get; }     // enumerate package names, resolve a name to a DialogPackage
-IGuestRecords Records { get; }      // RecordInvited / HasInvited / IsIgnored / Reset
-void OpenDialog(DialogPackage dialog, Action onFinished, Action<IDictionary<int, string>>? replaceText = null);
 ```
 
 `ILog` gains `Message`, `Fatal`, `Log(LogLevel, string)` and the module's `Id` / `Version`.
+
+`IPresentationServices` holds what only exists while a scene runs — the camera, the effect and audio layers,
+the player and the desks. Every scene services object exposes it as `Presentation`, and because it acts on
+the running scene every member throws outside that scene loop's `Setup`/`Update`/`Shutdown` (and after the
+scene was replaced).
+
+```csharp
+void ShakeCamera(float duration, float strength, float frequency);
+IVfxHandle PlayVfx(string assetPath, Vector3 position);
+void PlayAudio(string assetPath);
+Vector3 PlayerPosition { get; }
+Vector3 TablePosition(int deskCode);
+```
+
+A global loop only ever sees `ICommonServices`, so it can never reach the presentation layer.
 
 ## Global loop and IMGUI
 
@@ -38,7 +71,7 @@ void OpenDialog(DialogPackage dialog, Action onFinished, Action<IDictionary<int,
 public interface IGlobalServices { ICommonServices Common { get; } }
 
 [AutoWire] public interface IIMGUIProvider { void OnGui(IIMGUIDrawer drawer); }
-public interface IIMGUIDrawer { /* forwards GUI, GUILayout, GUIUtility, Event, Screen */ }
+public interface IIMGUIDrawer { /* mirror values and handles only: no engine type crosses this surface */ }
 ```
 
 ## Coroutines
@@ -109,9 +142,9 @@ public interface IGuestGroupListener
 ## Services and switches
 
 ```csharp
-IDaySceneMapServices : void Swap(string mapLabel, string markerName, int travelCount, Action onFinished = null);
+IDaySceneMapServices : void Swap(string mapLabel, string markerName, int travelCount, Action? onFinished = null);
 IWorkSceneGuests     : void SetSeatingEnabled(bool enabled);
-                       void BeginOrderSession(GuestGroupController group, GuestsManager.OrderGenerationResult result, GuestsManager.OrderBase order);
+                       void BeginOrderSession(GuestGroupController group, GuestsManager.OrderGenerationResult result, GuestsManager.OrderBase order, string message);
 IWorkSceneCook       : void SetCallEnabled(bool enabled);
 IWorkSceneIzakaya    : void SetCloseEnabled(bool enabled);
 ```
@@ -145,10 +178,11 @@ Mapping tables `FoodsMapping`, `BeveragesMapping` and `RecipesMapping` record th
 
 Everything below the design sections is implemented, except where noted:
 
-- Host: `IGlobalGameLoop`/`IGlobalServices`, `IIMGUIProvider`/`IIMGUIDrawer`, coroutines with a managed pump and opaque handles, `IModStorage`, `IDialogCatalog`, `IGuestRecords`, extended `ILog`, `IPlatformInfo` (not exposed yet; moves to `ICommonServices`).
+- Host: `IGlobalGameLoop`/`IGlobalServices`, `IIMGUIProvider`/`IIMGUIDrawer`, coroutines with a managed pump and opaque handles, `IModStorage`, `IDialogCatalog`, `IGuestRecords`, extended `ILog`, `IPlatformInfo` (handed out as `ICommonServices.Platform`).
+- Capability split: `ICommonServices` is the always available set (main thread scheduler, process level coroutine dispatcher, platform info and the interface free of a scene), while `IPresentationServices` is the scene scoped set (camera shake, effects, audio, player and table positions) exposed by every scene services object as `Presentation` and gated by `ServiceScope`. The scene loop contract is split per scene under `src/Mystia.Net.Sdk/GameApi/SceneLoops*.cs`.
 - Listeners: session, status, mission, day/work UI, metrics, QTE, schedule, chat option/menu, cook selection, post-evaluation, guest spawn requests, leave dispatch for `LeaveFromDesk`.
 - Services: economy (metrics edits + popularity tags), time (whole night seconds, timing gate), QTE, buffs, spell host, spawn marker refresh, reward replay.
 - Data: clothes, spells, buffs, mission/event nodes, day maps and the extension seams they need; merchants now carry a full runtime pipeline.
 - Spells: mods implement `ISpell`; the bridge wraps it in its own `SpellBase` subclass, drives the managed routine on the framework pump and enters the scene scope per resume step.
 
-Still open: `PlayVfx`/`PlayAudio` are placeholders (a mod-scoped asset path context is missing), the spell declaration portrait pivot is carried by `SpellData` but not consumed yet, and `SceneLoops.cs` keeps scaffolding defaults for members whose inner implementations live in `SceneServices.cs`.
+Still open: `PlayVfx`/`PlayAudio` are placeholders (a mod-scoped asset path context is missing), the spell declaration portrait pivot is carried by `SpellData` but not consumed yet, and the scene loop contract keeps scaffolding defaults for members whose inner implementations live in `SceneServices.cs`. The scene session boundaries come from `SceneLoopHost` (`Enter`/`Shutdown` drive `CoroutinePump.EnterScene`/`LeaveScene`), so the pump falls back to measuring the loaded scene set only when the host drives no scene at all.

@@ -8,50 +8,21 @@ using UnityEngine;
 namespace Mystia.Modding.Bridge;
 
 /// <summary>
-/// The presentation half of <see cref="ICommonServices"/>.
+/// The presentation half of a scene session (see <see cref="IPresentationServices"/>).
 ///
-/// Like <c>CommonServices</c> it is handed out to every scene loop, so this class decorates that instance and
-/// answers the seven presentation members on top of it.
-/// Wire it where <c>CommonServices.Shared</c> is returned today:
-/// <c>public ICommonServices Common => PresentationServices.Shared;</c> (splash, main, day, prep, work, staff
-/// and result services, plus the global host).
+/// These members act on the scene that is running right now, so unlike <see cref="ICommonServices"/> they are
+/// not handed out to every loop: a scene services instance exposes them through
+/// <c>Presentation</c>, and <see cref="ServiceScope.Require"/> keeps a call outside that scene loop's
+/// Setup/Update/Shutdown (or after the scene was replaced) from touching the wrong scene.
 /// </summary>
-internal sealed class PresentationServices : ICommonServices
+internal sealed class PresentationServices : IPresentationServices
 {
-    /// <summary>The instance the scene services should hand out as <c>Common</c>.</summary>
-    internal static readonly PresentationServices Shared = new(CommonServices.Shared);
+    /// <summary>The instance every scene services object hands out as <c>Presentation</c>.</summary>
+    internal static readonly PresentationServices Shared = new();
 
     /// <summary>Asset paths already reported by the effect/audio placeholders, so a per frame call cannot
     /// flood the host log.</summary>
     private static readonly HashSet<string> Reported = new(StringComparer.Ordinal);
-
-    private readonly ICommonServices _inner;
-
-    private PresentationServices(ICommonServices inner) => _inner = inner;
-
-    public ICoroutineDispatcher Coroutines => _inner.Coroutines;
-
-    public IDialogCatalog Dialogs => _inner.Dialogs;
-
-    public IGuestRecords Records => _inner.Records;
-
-    public void LoadScene(Scene scene) => _inner.LoadScene(scene);
-
-    public void OpenDialog(DialogPackage dialog, Action onFinished) => _inner.OpenDialog(dialog, onFinished);
-
-    public void OpenDialog(
-        DialogPackage dialog,
-        Action onFinished,
-        Action<Il2CppSystem.Collections.Generic.Dictionary<int, string>>? replaceText) =>
-        _inner.OpenDialog(dialog, onFinished, replaceText);
-
-    public void FadeIn(Action onFinished) => _inner.FadeIn(onFinished);
-
-    public void FadeOut(Action onFinished) => _inner.FadeOut(onFinished);
-
-    public void SetInputEnabled(bool enabled) => _inner.SetInputEnabled(enabled);
-
-    public void SetNightTransitionEnabled(bool enabled) => _inner.SetNightTransitionEnabled(enabled);
 
     public void ShakeCamera(float duration, float strength, float frequency)
     {
@@ -90,11 +61,6 @@ internal sealed class PresentationServices : ICommonServices
         // The game's own table target, i.e. what a spell aims its delivery at for that desk.
         return SpellBase.GetGuestTable(deskCode);
     }
-
-    // The language tables are global data, not scene state, so these two read them without the scene scope.
-    public string FoodTagText(int tagId) => DataBaseLanguage.GetFoodTag(tagId);
-
-    public string EvaluationText(int evaluation) => DataBaseLanguage.GetEvalText(evaluation);
 
     /// <summary>
     /// Effects and audio are still placeholders. Resolving an asset path works like <c>SpriteFiles</c> does it

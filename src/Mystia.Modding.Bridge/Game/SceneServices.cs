@@ -6,10 +6,12 @@ using Common.UI.GlobalMap;
 using GameData.Core.Collections;
 using GameData.Core.Collections.CharacterUtility;
 using GameData.Core.Collections.NightSceneUtility;
+using GameData.CoreLanguage.Collections;
 using GameData.Profile;
 using GameData.RunTime.Common;
 using GameData.RunTime.NightSceneUtility;
 using HarmonyLib;
+using Mystia;
 using Mystia.Listeners;
 using Mystia.Scenes;
 using NightScene.CookingUtility;
@@ -36,17 +38,25 @@ internal static class GameMembers
     }
 }
 
+// The always available half of the host capabilities: global loops and scene loops both see this instance, so
+// nothing here asks for the scene scope (the scene scoped actions live on PresentationServices).
 internal sealed class CommonServices : ICommonServices
 {
     internal static readonly CommonServices Shared = new();
 
+    // The host injects its queued scheduler before mods load; a host that never installed one (the test
+    // host) falls back to an inline one, so the member stays callable instead of being null.
+    public IMainThreadScheduler MainThread => BridgeInstaller.MainThread ?? (IMainThreadScheduler)InlineMainThread.Shared;
+
+    // The process dispatcher: a mod's routines are not owned by a scene, so they outlive a scene change.
+    public ICoroutineDispatcher Coroutines => CoroutineScheduler.Global;
+
+    public IPlatformInfo Platform => PlatformInfo.Shared;
+
     public void LoadScene(Scene scene)
     {
-        ServiceScope.Require();
         UniversalGameManager.LoadScene(scene);
     }
-
-    public ICoroutineDispatcher Coroutines => CoroutineScheduler.Shared;
 
     public IDialogCatalog Dialogs => DialogCatalog.Shared;
 
@@ -54,7 +64,6 @@ internal sealed class CommonServices : ICommonServices
 
     public void OpenDialog(DialogPackage dialog, Action onFinished)
     {
-        ServiceScope.Require();
         UniversalGameManager.OpenDialogMenu(dialog, onFinished);
     }
 
@@ -63,7 +72,6 @@ internal sealed class CommonServices : ICommonServices
         Action onFinished,
         Action<Il2CppSystem.Collections.Generic.Dictionary<int, string>>? replaceText)
     {
-        ServiceScope.Require();
         if (replaceText is null)
         {
             UniversalGameManager.OpenDialogMenu(dialog, onFinished);
@@ -76,34 +84,37 @@ internal sealed class CommonServices : ICommonServices
 
     public void FadeIn(Action onFinished)
     {
-        ServiceScope.Require();
         UniversalGameManager.FadeIn(onFinished);
     }
 
     public void FadeOut(Action onFinished)
     {
-        ServiceScope.Require();
         UniversalGameManager.FadeOut(onFinished);
     }
 
     public void SetInputEnabled(bool enabled)
     {
-        ServiceScope.Require();
         UniversalGameManager.UpdatePlayerInputAvailability(enabled);
     }
 
     public void SetNightTransitionEnabled(bool enabled)
     {
-        ServiceScope.Require();
         StockGate.TransitionDialog = enabled;
     }
+
+    // The language tables are global data, not scene state, so these two read them without the scene scope.
+    public string FoodTagText(int tagId) => DataBaseLanguage.GetFoodTag(tagId);
+
+    public string EvaluationText(int evaluation) => DataBaseLanguage.GetEvalText(evaluation);
 }
 
 internal sealed class SplashSceneServices : ISplashSceneServices
 {
     internal static readonly SplashSceneServices Shared = new();
 
-    public ICommonServices Common => PresentationServices.Shared;
+    public ICommonServices Common => CommonServices.Shared;
+
+    public IPresentationServices Presentation => PresentationServices.Shared;
 }
 
 internal sealed class MainSceneServices : IMainSceneServices
@@ -112,7 +123,9 @@ internal sealed class MainSceneServices : IMainSceneServices
 
     public IMainSceneSessionServices Session { get; } = new SessionServices();
 
-    public ICommonServices Common => PresentationServices.Shared;
+    public ICommonServices Common => CommonServices.Shared;
+
+    public IPresentationServices Presentation => PresentationServices.Shared;
 
     private sealed class SessionServices : IMainSceneSessionServices
     {
@@ -137,7 +150,9 @@ internal sealed class DaySceneServices : IDaySceneServices
 
     public IDaySceneInputServices Input { get; } = new InputServices();
 
-    public ICommonServices Common => PresentationServices.Shared;
+    public ICommonServices Common => CommonServices.Shared;
+
+    public IPresentationServices Presentation => PresentationServices.Shared;
 
     private sealed class MapServices : IDaySceneMapServices
     {
@@ -243,7 +258,9 @@ internal sealed class PrepNightSceneServices : IPrepNightSceneServices
 
     public IPrepNightSessionServices Session { get; } = new SessionServices();
 
-    public ICommonServices Common => PresentationServices.Shared;
+    public ICommonServices Common => CommonServices.Shared;
+
+    public IPresentationServices Presentation => PresentationServices.Shared;
 
     private sealed class MapServices : IPrepNightMapServices
     {
@@ -353,7 +370,9 @@ internal sealed class WorkSceneServices : IWorkSceneServices
 
     public IWorkSceneIzakaya Izakaya { get; } = new IzakayaServices();
 
-    public ICommonServices Common => PresentationServices.Shared;
+    public ICommonServices Common => CommonServices.Shared;
+
+    public IPresentationServices Presentation => PresentationServices.Shared;
 
     private sealed class GuestServices : IWorkSceneGuests
     {
@@ -608,12 +627,16 @@ internal sealed class StaffSceneServices : IStaffSceneServices
 {
     internal static readonly StaffSceneServices Shared = new();
 
-    public ICommonServices Common => PresentationServices.Shared;
+    public ICommonServices Common => CommonServices.Shared;
+
+    public IPresentationServices Presentation => PresentationServices.Shared;
 }
 
 internal sealed class ResultSceneServices : IResultSceneServices
 {
     internal static readonly ResultSceneServices Shared = new();
 
-    public ICommonServices Common => PresentationServices.Shared;
+    public ICommonServices Common => CommonServices.Shared;
+
+    public IPresentationServices Presentation => PresentationServices.Shared;
 }

@@ -36,6 +36,10 @@ internal static class SceneLoopHost
         Shutdown();
         _active = scene;
         StockGate.Reset(scene);
+        // One new scene session per scene, so a routine started on the scene dispatcher dies with the scene
+        // even before the next Unity scene is measured. Shutdown() above is the only other call site, which
+        // keeps LeaveScene and EnterScene from rotating the session twice for one transition.
+        CoroutinePump.EnterScene();
         Run(scene, Phase.Setup, 0f);
     }
 
@@ -54,6 +58,9 @@ internal static class SceneLoopHost
             return;
         _active = null;
         Run(scene, Phase.Shutdown, 0f);
+        // The shutdown callbacks still ran inside the scene session; the session ends once they are done, so
+        // the routines bound to it stop on the next pump tick.
+        CoroutinePump.LeaveScene();
     }
 
     private static void Run(SceneId scene, Phase phase, float delta)

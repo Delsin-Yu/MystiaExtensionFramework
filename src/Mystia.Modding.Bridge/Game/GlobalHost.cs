@@ -4,7 +4,7 @@ using Mystia.Scenes;
 namespace Mystia.Modding.Bridge;
 
 // Global loops live for the whole process and stay outside ServiceScope, so they may only use
-// non scoped members such as ICommonServices.
+// ICommonServices: the always available capabilities, never the scene scoped IPresentationServices.
 internal static class GlobalHost
 {
     private enum Phase
@@ -107,5 +107,5 @@ internal sealed class GlobalServices : IGlobalServices
 {
     internal static readonly GlobalServices Shared = new();
 
-    public ICommonServices Common => PresentationServices.Shared;
+    public ICommonServices Common => CommonServices.Shared;
 }

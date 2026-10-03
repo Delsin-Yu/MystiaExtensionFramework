@@ -1,6 +1,7 @@
 using Common.UI;
 using GameData.Profile;
 using Mystia;
+using Mystia.Assets;
 
 using UnityEngine;
 
@@ -31,6 +32,18 @@ public interface ICommonServices
     IDialogCatalog Dialogs { get; }
 
     IGuestRecords Records { get; }
+
+    /// <summary>
+    /// Builds the assets a mod draws, plays and files — textures, sprites, audio clips, pixel buffers — out of
+    /// data the mod carries. Every member creates an engine object, so every member is main thread only.
+    /// </summary>
+    IAssetFactory Assets { get; }
+
+    /// <summary>
+    /// Files what <see cref="Assets"/> built into the game's own asset pipeline, under a key of the mod's
+    /// choosing, so that game code and mods resolve the same object through the same address.
+    /// </summary>
+    IAssetLocator Locator { get; }
 
     void LoadScene(Scene scene);
 

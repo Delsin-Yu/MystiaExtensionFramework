@@ -1,0 +1,286 @@
+using Mystia;
+using Mystia.Numerics;
+
+namespace Mystia.Scenes
+{
+    // The challenge timeline. A boss challenge walks its phases in order; every phase owns one clock and one
+    // guest spawn loop, and the challenge's own main loop advances from one resume position to the next,
+    // carrying the phase data the game checks at every transition. Nothing on this surface names an engine
+    // type: what it describes - the phase clock, the spawn loop and the main loop itself - are compiler
+    // generated members of the game's challenge coroutines, so a mod sees a phase, a clock, a step and a
+    // spawn attempt, and never the closure those live in.
+
+    /// <summary>Which phase of a boss challenge runs.</summary>
+    public enum ChallengePhase : byte
+    {
+        /// <summary>No phase runs: before the first one and once the challenge is over.</summary>
+        None = 0,
+
+        /// <summary>The first phase, the one whose clock is the phase one countdown.</summary>
+        One = 1,
+
+        /// <summary>The second phase, which spawns the special guests the challenge needs.</summary>
+        Two = 2,
+
+        /// <summary>The third phase, the one fought against the boss guest itself.</summary>
+        Three = 3,
+    }
+
+    /// <summary>Whether the running challenge is its first attempt or its retake.</summary>
+    public enum ChallengeRunKind : byte
+    {
+        /// <summary>The story attempt.</summary>
+        Story = 0,
+
+        /// <summary>The retake, which runs the challenge's harder third phase.</summary>
+        Retake = 1,
+    }
+
+    /// <summary>Why a phase's clock stopped, i.e. why the phase stopped moving on.</summary>
+    public enum ChallengeClockStop : byte
+    {
+        /// <summary>
+        /// The clock consumed its last second while the phase's own condition was still unmet: the phase is
+        /// over and the challenge checks whether it succeeded.
+        /// </summary>
+        Elapsed = 0,
+
+        /// <summary>
+        /// The phase's own condition ended the clock while time was left on it: the phase reached its goal.
+        /// </summary>
+        ObjectiveReached = 1,
+
+        /// <summary>
+        /// A mod ended the clock itself through <see cref="IWorkSceneChallengeServices.EndPhaseClock"/>.
+        /// </summary>
+        Ended = 2,
+    }
+
+    /// <summary>The verdict for one iteration of a phase's guest spawn loop.</summary>
+    public enum ChallengeSpawnVerdict : byte
+    {
+        /// <summary>The loop runs the iteration and the game spawns its guests.</summary>
+        Allow = 0,
+
+        /// <summary>
+        /// The iteration is held: nothing is spawned and the loop waits for its next interval, exactly as it
+        /// does between two spawns.
+        /// </summary>
+        Hold = 1,
+    }
+
+    // Opaque token of one challenge run. A mod compares handles and passes them back to the framework; there
+    // is no public way to build one.
+    /// <summary>One run of a boss challenge, i.e. one <c>MainChallengeLoop</c>.</summary>
+    public readonly struct ChallengeRunHandle : IEquatable<ChallengeRunHandle>
+    {
+        internal ChallengeRunHandle(int id) => Id = id;
+
+        internal int Id { get; }
+
+        public bool Equals(ChallengeRunHandle other) => Id == other.Id;
+
+        public override bool Equals(object? obj) => obj is ChallengeRunHandle other && Equals(other);
+
+        public override int GetHashCode() => Id;
+
+        public static bool operator ==(ChallengeRunHandle left, ChallengeRunHandle right) => left.Equals(right);
+
+        public static bool operator !=(ChallengeRunHandle left, ChallengeRunHandle right) => !left.Equals(right);
+    }
+
+    // Opaque token of one phase clock, the same shape as ChallengeRunHandle.
+    /// <summary>One phase clock: from the step that starts it to the step that stops it.</summary>
+    public readonly struct ChallengeClockHandle : IEquatable<ChallengeClockHandle>
+    {
+        internal ChallengeClockHandle(int id) => Id = id;
+
+        internal int Id { get; }
+
+        public bool Equals(ChallengeClockHandle other) => Id == other.Id;
+
+        public override bool Equals(object? obj) => obj is ChallengeClockHandle other && Equals(other);
+
+        public override int GetHashCode() => Id;
+
+        public static bool operator ==(ChallengeClockHandle left, ChallengeClockHandle right) => left.Equals(right);
+
+        public static bool operator !=(ChallengeClockHandle left, ChallengeClockHandle right) => !left.Equals(right);
+    }
+
+    // Opaque token of one resume position of the challenge's main loop. The number is the game's own state
+    // number, so a mod compares steps for equality - "hold the loop where it checks the phase data", "this is
+    // the step that just ran" - and never computes with the value.
+    /// <summary>One resume position of the challenge's own main loop.</summary>
+    public readonly struct ChallengeStep : IEquatable<ChallengeStep>
+    {
+        internal ChallengeStep(int index) => Index = index;
+
+        internal int Index { get; }
+
+        public bool Equals(ChallengeStep other) => Index == other.Index;
+
+        public override bool Equals(object? obj) => obj is ChallengeStep other && Equals(other);
+
+        public override int GetHashCode() => Index;
+
+        public static bool operator ==(ChallengeStep left, ChallengeStep right) => left.Equals(right);
+
+        public static bool operator !=(ChallengeStep left, ChallengeStep right) => !left.Equals(right);
+    }
+
+    /// <summary>A phase that started: which phase of which run, and whether that run is the retake.</summary>
+    /// <param name="Run">The run the phase belongs to.</param>
+    /// <param name="Phase">The phase that started.</param>
+    /// <param name="Kind">Whether the run is the story attempt or the retake.</param>
+    public readonly record struct ChallengePhaseInfo(ChallengeRunHandle Run, ChallengePhase Phase, ChallengeRunKind Kind);
+
+    /// <summary>A phase clock. <paramref name="Seconds"/> is the length the clock actually runs with, after
+    /// any <see cref="IWorkSceneChallengeServices.SetPhaseSeconds"/> change was applied.</summary>
+    /// <param name="Handle">The clock itself.</param>
+    /// <param name="Phase">The phase whose clock this is.</param>
+    /// <param name="Kind">Whether the run is the story attempt or the retake.</param>
+    /// <param name="Seconds">The length of the clock in seconds.</param>
+    public readonly record struct ChallengeClock(ChallengeClockHandle Handle, ChallengePhase Phase, ChallengeRunKind Kind, float Seconds);
+
+    /// <summary>One second of a phase clock, as the game is about to consume or has just consumed it.</summary>
+    /// <param name="Handle">The clock the tick belongs to.</param>
+    /// <param name="Phase">The phase whose clock this is.</param>
+    /// <param name="RemainingSeconds">The seconds left on the clock; never negative.</param>
+    /// <param name="Progress">How much of the clock ran, from 0 (just started) to 1 (ran out).</param>
+    public readonly record struct ChallengeClockTick(ChallengeClockHandle Handle, ChallengePhase Phase, float RemainingSeconds, float Progress);
+
+    /// <summary>
+    /// One iteration of a phase's guest spawn loop, as the loop is about to run it.
+    /// </summary>
+    /// <param name="Phase">The phase whose spawn loop this iteration belongs to.</param>
+    /// <param name="Index">
+    /// The iteration's number inside this phase of this run, starting at 1. A held iteration does not consume a
+    /// number: the attempt that runs keeps the number the held one would have had.
+    /// </param>
+    /// <param name="Position">The spot the phase's guests are spawned at.</param>
+    public readonly record struct ChallengeSpawnAttempt(ChallengePhase Phase, int Index, Vector3 Position);
+
+    /// <summary>
+    /// The challenge of the running work scene: which phase runs, the time left on its clock, and the two
+    /// things a mod drives from the outside - the length of a phase clock and the verdict for the next
+    /// iteration of a phase's guest spawn loop.
+    /// <para>
+    /// Every member acts on the running scene, so every member throws outside the work scene loop's
+    /// <c>Setup</c>, <c>Update</c> and <c>Shutdown</c>.
+    /// </para>
+    /// </summary>
+    public interface IWorkSceneChallengeServices
+    {
+        /// <summary>The phase running now, <see cref="ChallengePhase.None"/> when no challenge phase runs.</summary>
+        ChallengePhase Phase { get; }
+
+        /// <summary>Whether the running challenge is the story attempt or the retake.</summary>
+        ChallengeRunKind RunKind { get; }
+
+        /// <summary>
+        /// The seconds left on the running phase clock, or -1 when no clock runs. A clock a mod ended itself
+        /// reports -1 from the moment the phase ends.
+        /// </summary>
+        float RemainingSeconds { get; }
+
+        /// <summary>The running phase clock, zero when no clock runs.</summary>
+        ChallengeClockHandle Clock { get; }
+
+        /// <summary>
+        /// Replaces the length of a phase's clock before that clock starts, which is how a mod stretches a
+        /// phase. The game keeps one phase length for the whole challenge, so the change a phase starts with is
+        /// the length every later phase inherits. Returns false when that phase's clock already ran in this
+        /// challenge run, where the length can no longer be applied; the change is remembered until then, so a
+        /// mod may arm it from <c>IChallengeListener.OnChallengePhaseStarted</c> or any time before.
+        /// </summary>
+        bool SetPhaseSeconds(ChallengePhase phase, float seconds);
+
+        /// <summary>
+        /// Sets the verdict the next iteration of <paramref name="phase"/>'s guest spawn loop uses, replacing
+        /// what the listeners vote for that one iteration. The verdict is one shot: the iteration that reads it
+        /// consumes it, and it does not survive the phase's end.
+        /// </summary>
+        void SetNextGuestSpawn(ChallengePhase phase, ChallengeSpawnVerdict verdict);
+
+        /// <summary>
+        /// Ends the running phase clock now: the clock's routine finishes and the challenge's main loop goes on
+        /// to the phase's completion check. Throws <see cref="InvalidOperationException"/> when no clock runs.
+        /// </summary>
+        void EndPhaseClock();
+    }
+}
+
+namespace Mystia.Listeners
+{
+    using Mystia.Scenes;
+
+    /// <summary>
+    /// The challenge timeline of the work scene: phase starts and ends, the phase clock, the main loop's own
+    /// steps, and the iterations of a phase's guest spawn loop.
+    /// <para>
+    /// The <c>OnPre…</c> members are interceptions: every listener is asked, so a cancellation never hides the
+    /// event from the listeners registered after it, and what cancels reaches the framework once all of them
+    /// ran. A cancellation holds the piece of the timeline the callback belongs to - the main loop step, the
+    /// clock's second or the spawn iteration - instead of letting the game run it; the notification that
+    /// reports that piece as done is then not delivered, because the game did not do it.
+    /// </para>
+    /// </summary>
+    [AutoWire]
+    public interface IChallengeListener
+    {
+        /// <summary>
+        /// The challenge's main loop is about to run the step at <paramref name="step"/>. Cancelling holds the
+        /// loop at that same resume position and lets it wait a frame, which is how the phase's data is checked
+        /// again before the game goes on.
+        /// </summary>
+        void OnPreChallengeStep(ChallengeStep step, ref bool cancelInvocation) { }
+
+        /// <summary>The step at <paramref name="step"/> ran and the loop moved on from there.</summary>
+        void OnChallengeStepRan(ChallengeStep step) { }
+
+        /// <summary>A phase of the running challenge started, before that phase's clock starts.</summary>
+        void OnChallengePhaseStarted(ChallengePhaseInfo phase) { }
+
+        /// <summary>
+        /// A phase ended, i.e. its clock stopped. The game's own completion check for the phase runs right
+        /// after this, which is what decides whether the phase was a success.
+        /// </summary>
+        void OnChallengePhaseEnded(ChallengePhase phase, ChallengeClockStop stop) { }
+
+        /// <summary>
+        /// A phase clock started. <paramref name="clock"/> carries the length the clock runs with, after any
+        /// change a mod armed through <c>IWorkSceneChallengeServices.SetPhaseSeconds</c>. The first second is
+        /// consumed inside the step this is reported from.
+        /// </summary>
+        void OnChallengeClockStarted(ChallengeClock clock) { }
+
+        /// <summary>
+        /// The next second of the clock is about to be consumed. Cancelling holds the clock for a frame: the
+        /// second is not consumed and the clock is asked again instead of moving on.
+        /// </summary>
+        void OnPreChallengeClockTick(ChallengeClockTick tick, ref bool cancelInvocation) { }
+
+        /// <summary>The second reported by <paramref name="tick"/> was consumed.</summary>
+        void OnChallengeClockTicked(ChallengeClockTick tick) { }
+
+        /// <summary>
+        /// The clock reached its own stopping condition - the phase's goal was met, or the last second was
+        /// consumed. Writing true into <paramref name="holdClock"/> keeps the phase from ending: the clock
+        /// waits and is asked again, so a mod that waits for another peer's decision releases it later by
+        /// leaving the value false, and it also has <c>EndPhaseClock</c> to end the clock itself.
+        /// </summary>
+        void OnChallengeClockElapsed(ChallengeClock clock, ref bool holdClock) { }
+
+        /// <summary>
+        /// One iteration of <paramref name="attempt"/>'s phase spawn loop is about to run: the loop picks the
+        /// guests of this phase and hands them to the scene. Cancelling holds the iteration - nothing is spawned
+        /// and the loop waits for its next interval - which is what a peer that spawns its own guests does.
+        /// Cancelling here only holds the spawn; it never stops the loop itself.
+        /// </summary>
+        void OnPreChallengeGuestSpawn(ChallengeSpawnAttempt attempt, ref bool cancelInvocation) { }
+
+        /// <summary>The iteration reported by <paramref name="attempt"/> ran and spawned its guests.</summary>
+        void OnChallengeGuestSpawned(ChallengeSpawnAttempt attempt) { }
+    }
+}

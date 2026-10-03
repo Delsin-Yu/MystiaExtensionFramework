@@ -12,6 +12,7 @@ using GameData.RunTime.Common;
 using GameData.RunTime.NightSceneUtility;
 using HarmonyLib;
 using Mystia;
+using Mystia.Assets;
 using Mystia.Listeners;
 using Mystia.Scenes;
 using NightScene.CookingUtility;
@@ -61,6 +62,12 @@ internal sealed class CommonServices : ICommonServices
     public IDialogCatalog Dialogs => DialogCatalog.Shared;
 
     public IGuestRecords Records => GuestRecords.Shared;
+
+    // Both are process wide: the factory builds engine objects a mod then owns, and the locator files them
+    // into the one asset pipeline the game itself loads through.
+    public IAssetFactory Assets => UnityAssetFactory.Shared;
+
+    public IAssetLocator Locator => AssetLocator.Shared;
 
     public void OpenDialog(DialogPackage dialog, Action onFinished)
     {
@@ -367,6 +374,8 @@ internal sealed class WorkSceneServices : IWorkSceneServices
     public IWorkSceneBuffs Buffs { get; } = WorkSceneBuffsServices.Shared;
 
     public ISpellHost Spells { get; } = WorkSceneSpellHost.Shared;
+
+    public IWorkSceneChallengeServices Challenge { get; } = ChallengeServices.Shared;
 
     public IWorkSceneIzakaya Izakaya { get; } = new IzakayaServices();
 

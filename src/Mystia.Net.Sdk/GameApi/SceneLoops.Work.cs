@@ -48,6 +48,12 @@ public interface IWorkSceneServices
     /// <summary>The spell the running work scene is executing.</summary>
     ISpellHost Spells => throw new NotSupportedException();
 
+    /// <summary>
+    /// The challenge timeline of the running work scene, whose phases, clock and guest spawns the framework
+    /// observes. The member is only valid inside this scene's loop, like every other service here.
+    /// </summary>
+    IWorkSceneChallengeServices Challenge => throw new NotSupportedException();
+
     ICommonServices Common { get; }
 
     IPresentationServices Presentation { get; }

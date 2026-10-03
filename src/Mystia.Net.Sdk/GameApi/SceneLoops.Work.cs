@@ -156,6 +156,29 @@ public interface IWorkSceneGuests
         bool hidden,
         bool free) => throw new NotSupportedException();
 
+    /// <summary>
+    /// Places a manual order — the story driven path, whose order the mod builds itself with
+    /// <see cref="CreateOrder"/> — and reports the verdict the game reaches for it. The order is marked as a
+    /// manual one, which is what makes the game settle it the way it settles a story order.
+    /// </summary>
+    /// <param name="group">The group the order belongs to.</param>
+    /// <param name="order">The order to place.</param>
+    /// <param name="onEvaluated">Run with the verdict the game reaches for the order.</param>
+    void BeginManualOrder(GuestHandle group, OrderHandle order, Action<GuestEvaluation> onEvaluated) => throw new NotSupportedException();
+
+    /// <summary>Evaluates a manual order and reports the game's verdict to the caller.</summary>
+    /// <param name="group">The group whose manual order is evaluated.</param>
+    /// <param name="onEvaluated">Run with the verdict the game reaches for the order.</param>
+    void EvaluateManual(GuestHandle group, Action<GuestEvaluation> onEvaluated) => throw new NotSupportedException();
+
+    /// <summary>Marks a group as already evaluated, which the manual path does before it evaluates an order.</summary>
+    /// <param name="group">The group to mark.</param>
+    void SetEvaluated(GuestHandle group) => throw new NotSupportedException();
+
+    /// <summary>Drops the order registration of a group, which the manual path cleans before it evaluates.</summary>
+    /// <param name="group">The group whose order registration is dropped.</param>
+    void CleanOrderInfo(GuestHandle group) => throw new NotSupportedException();
+
     /// <summary>Whether a group of this size still fits into the waiting seats.</summary>
     bool CanQueue(GuestHandle group) => throw new NotSupportedException();
 

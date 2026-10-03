@@ -87,6 +87,7 @@ internal sealed class ChallengeTimeline
 
     private nint _boss;
     private ChallengeBossHandle _bossHandle;
+    private GuestHandle _bossGuest;
     private readonly Dictionary<nint, ChallengeBossHandle> _groups = [];
     private bool? _bossOrderEnabled;
     private int _bossLife = -1;
@@ -525,14 +526,20 @@ internal sealed class ChallengeTimeline
     /// guest group of the run. The handle counts up, so a handle of a finished run never equals a later one,
     /// and it stays valid until the next run starts.
     /// </summary>
-    internal void CaptureBoss(nint pointer)
+    internal void CaptureBoss(nint pointer, GuestHandle bossGuest = default)
     {
         if (!_running || pointer == 0)
             return;
-        // The boss is one of the run's guest groups, so it carries the very handle an evaluation of it carries.
+        // The boss is one of the run's guest groups, so it carries the very handle an evaluation of it carries,
+        // and a mod that syncs the boss as an ordinary guest group needs that handle rather than the challenge's
+        // own.
         _boss = pointer;
         _bossHandle = HandleFor(pointer);
+        _bossGuest = bossGuest;
     }
+
+    /// <summary>The boss group as the entity layer names it, for a mod that drives the boss as a guest group.</summary>
+    internal GuestHandle BossGuest => _bossGuest;
 
     /// <summary>
     /// The handle of one guest group of the run: the same handle for the same group for as long as the run is
@@ -790,6 +797,15 @@ internal sealed class ChallengeServices : IWorkSceneChallengeServices
         ServiceScope.Require();
         if (!ChallengeTimeline.Shared.RequestClockEnd())
             throw new InvalidOperationException("No challenge phase clock is running.");
+    }
+
+    public GuestHandle BossGuest
+    {
+        get
+        {
+            ServiceScope.Require();
+            return ChallengeTimeline.Shared.BossGuest;
+        }
     }
 
     public ChallengeBossHandle Boss

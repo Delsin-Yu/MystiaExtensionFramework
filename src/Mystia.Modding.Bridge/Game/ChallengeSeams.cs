@@ -140,7 +140,7 @@ internal static class ChallengeRunSeams
             // The game's own lookup named the boss already; the run's closure names the very same group, so it
             // is only the fallback for a build whose lookup label moved.
             if (timeline.Boss == default && context.yuyuko is not null)
-                timeline.CaptureBoss(context.yuyuko.Pointer);
+                timeline.CaptureBoss(context.yuyuko.Pointer, EntitySeams.GuestHandleOf(context.yuyuko));
         }
     }
 }

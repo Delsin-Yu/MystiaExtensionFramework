@@ -214,6 +214,45 @@ internal sealed class WorkSceneGuestServing : IWorkSceneGuests, IWorkSceneDishes
         return EntitySeams.GuestOf(group) is { } native && GuestGroupController.CanQueue(native.GuestCount);
     }
 
+    public void BeginManualOrder(GuestHandle group, OrderHandle order, Action<GuestEvaluation> onEvaluated)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native || EntitySeams.OrderOf(order) is not { } orderData)
+            return;
+
+        var callback = Verdict(onEvaluated);
+        StockGate.Bypass(() => GuestsManager.instance.SetManualControllerOrderInternal(native, callback, orderData));
+    }
+
+    public void EvaluateManual(GuestHandle group, Action<GuestEvaluation> onEvaluated)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native)
+            return;
+
+        var callback = Verdict(onEvaluated);
+        StockGate.Bypass(() => GuestsManager.instance.EvaulateManualOrder(native, callback));
+    }
+
+    public void SetEvaluated(GuestHandle group)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is { } native)
+            native.HasEvaluated = true;
+    }
+
+    public void CleanOrderInfo(GuestHandle group)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is { } native)
+            GuestsManager.instance.CleanOrderInfo(native);
+    }
+
+    /// <summary>The game's own verdict callback, handed to the manual order path in the entity layer's numbering.</summary>
+    private static Il2CppSystem.Action<GuestGroupController.EvaluationResult> Verdict(Action<GuestEvaluation> onEvaluated) =>
+        (Il2CppSystem.Action<GuestGroupController.EvaluationResult>)(Action<GuestGroupController.EvaluationResult>)(
+            result => onEvaluated(Mirrors.ToSdk(result)));
+
     public OrderHandle CreateOrder(GuestHandle group, OrderKind kind, int foodRequest, int beverageRequest, int deskCode, bool hidden, bool free)
     {
         ServiceScope.Require();

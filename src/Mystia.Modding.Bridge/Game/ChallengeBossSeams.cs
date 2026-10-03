@@ -114,7 +114,7 @@ internal static class ChallengeBossSeams
         {
             if (guestLabel != BossLabel || __result is null)
                 return;
-            ChallengeTimeline.Shared.CaptureBoss(__result.Pointer);
+            ChallengeTimeline.Shared.CaptureBoss(__result.Pointer, EntitySeams.GuestHandleOf(__result));
         }
     }
 }

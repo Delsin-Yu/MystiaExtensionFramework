@@ -296,6 +296,14 @@ namespace Mystia.Scenes
         ChallengeBossHandle Boss { get; }
 
         /// <summary>
+        /// The challenge's own boss group as an ordinary guest group of the entity layer. It is the same group
+        /// <see cref="Boss"/> names; a mod that syncs the boss as a guest group (its orders, its servings, its
+        /// evaluation) needs this handle, because every guest member speaks guest handles rather than the
+        /// challenge's own. It answers none until the run reached its boss.
+        /// </summary>
+        GuestHandle BossGuest { get; }
+
+        /// <summary>
         /// The boss's remaining life, mirrored from the third phase's own panel, or -1 while no life was
         /// reported. The mirror follows the game: every change the game makes to the boss's life - the panel
         /// being told the phase's context and every order the boss eats - is reported to the listeners.

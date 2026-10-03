@@ -80,6 +80,9 @@ internal interface IDishEntity
     /// <summary>The tags the dish added to itself (the seasoned tags).</summary>
     IReadOnlyList<int> AdditiveTags { get; }
 
+    /// <summary>The id of the cooker the food was registered to, or -1 when it is registered to none.</summary>
+    int CookerId { get; }
+
     /// <summary>The full name the game shows for the dish, or null when the language data is missing.</summary>
     string? Name { get; }
 
@@ -118,6 +121,9 @@ public sealed class DishProxy
 
     /// <summary>The tags the dish added to itself.</summary>
     public IReadOnlyList<int> AdditiveTags => _entity.AdditiveTags;
+
+    /// <summary>The id of the cooker the food was registered to, or -1 when it is registered to none.</summary>
+    public int CookerId => _entity.CookerId;
 
     /// <summary>The full name the game shows for the dish, or null when the language data is missing.</summary>
     public string? Name => _entity.Name;

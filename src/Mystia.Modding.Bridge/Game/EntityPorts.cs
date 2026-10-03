@@ -4,6 +4,7 @@ using GameData.Core.Collections;
 using GameData.Core.Collections.NightSceneUtility;
 using Mystia.Scenes;
 using Il2CppSystem.Linq;
+using NightScene.CookingUtility;
 using NightScene.GuestManagementUtility;
 
 namespace Mystia.Modding.Bridge;
@@ -186,6 +187,10 @@ internal sealed class UnityDishEntity : IDishEntity
     public IReadOnlyList<int> ModifierIds => Tags(_dish.Modifier);
 
     public IReadOnlyList<int> AdditiveTags => Tags(_dish.AdditiveTags);
+
+    // The dish's own registration: CookSystemManager keeps the cooker a dish was made on, and a dish that was
+    // never registered (a beverage, a dish the mod built itself) answers -1.
+    public int CookerId => CookSystemManager.instance.GetCooker(_dish, out var cooker) ? cooker.Id : -1;
 
     public string? Name => _dish.Text?.Name;
 

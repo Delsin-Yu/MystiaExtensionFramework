@@ -111,6 +111,34 @@ public interface IWorkSceneGuests
     // Bridge implemented members; the default bodies throw until the bridge wiring lands, so an unwired
     // member fails loudly instead of silently doing nothing.
 
+    /// <summary>Whether a group of this size still fits into the waiting seats.</summary>
+    bool CanQueue(GuestHandle group) => throw new NotSupportedException();
+
+    /// <summary>
+    /// Walks a group into the queue the way the game's own spawn path does when seating failed: the capacity
+    /// check, the walk to a waiting seat, the registration with the guest manager and the patience countdown.
+    /// <para>
+    /// The verdict stays with the caller: a group that runs out of patience is reported through
+    /// <c>IGuestGroupListener.OnGroupQueuePatienceDepleted</c> and then left where it is, instead of being sent
+    /// back to where it spawned the way the game's own queue path does it. A caller replaying a verdict another
+    /// machine already gave needs exactly that — the replaying machine must not decide on its own — and one that
+    /// wants the game's behaviour gives the verdict itself (<see cref="StopPatientCountdown"/> followed by
+    /// <see cref="GuestProxy.MoveToSpawn"/>).
+    /// </para>
+    /// Returns false when the queue cannot take the group, which leaves the caller to send it back to where it
+    /// spawned, the fallback the game itself takes.
+    /// </summary>
+    /// <param name="group">The group to walk into the queue.</param>
+    /// <param name="tryToJumpQueue">Whether the group takes the first free waiting seat instead of the last one.</param>
+    bool TryQueue(GuestHandle group, bool tryToJumpQueue = false) => throw new NotSupportedException();
+
+    /// <summary>
+    /// Stops a queued group's patience countdown. The game's own verdict does this before it sends the group
+    /// back to where it spawned, so a replayed verdict only has to call this and then move the group.
+    /// </summary>
+    /// <param name="group">The queued group whose countdown is stopped.</param>
+    void StopPatientCountdown(GuestHandle group) => throw new NotSupportedException();
+
     /// <summary>
     /// Sends one beverage to a group through the game's own serving path (it goes in the air first, the
     /// landing spot is re-checked and the order is evaluated when it becomes full). Returns the beverage that

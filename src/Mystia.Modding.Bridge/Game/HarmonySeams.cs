@@ -607,6 +607,38 @@ internal static class GuestSeams
         private static void Finalizer(int __state) => LeaveDispatch.Exit(__state);
     }
 
+    /// <summary>
+    /// The patience countdown a queued group runs on, which is the one place a group's depletion is decided
+    /// (<c>GuestsManager.AddToPatientCountdown</c> arms the callback, <c>RemoveFromPatientCountdown</c> clears
+    /// it). The callback is wrapped rather than replaced: the listeners hear the depletion once, and the verdict
+    /// the game armed still runs — the game's own for a group the game queued itself, the inert one a replayed
+    /// queue entry armed (see <c>IWorkSceneGuests.TryQueue</c>).
+    /// </summary>
+    [HarmonyPatch(typeof(GuestsManager), nameof(GuestsManager.AddToPatientCountdown))]
+    private static class QueueCountdown
+    {
+        private static void Postfix(GuestGroupController toCountDown)
+        {
+            if (toCountDown.OnPatientDepeletedCallback is not { } armed)
+                return;
+            toCountDown.OnPatientDepeletedCallback =
+                (Il2CppSystem.Action<GuestGroupController>)(Action<GuestGroupController>)(_ => Depleted(toCountDown, armed));
+        }
+
+        /// <summary>
+        /// Tells the listeners, then hands over to the verdict. UpdatePatient fires the callback on every tick
+        /// while the patience is zero, so it is dropped before it runs: one depletion, one notification, one
+        /// verdict.
+        /// </summary>
+        private static void Depleted(GuestGroupController group, Il2CppSystem.Action<GuestGroupController> armed)
+        {
+            group.OnPatientDepeletedCallback = null;
+            Dispatch.Run<IGuestGroupListener>(
+                listener => listener.OnGroupQueuePatienceDepleted(EntitySeams.GuestHandleOf(group)));
+            armed.Invoke(group);
+        }
+    }
+
     [HarmonyPatch(typeof(GuestsManager), nameof(GuestsManager.TryCloseIzakaya))]
     private static class Closing
     {

@@ -209,6 +209,15 @@ public interface IGuestGroupListener
 
     void OnGroupQueued(GuestHandle group) { }
 
+    /// <summary>
+    /// A queued group ran out of patience. It fires once per depletion, whether the group was queued by the game
+    /// itself or through <see cref="IWorkSceneGuests.TryQueue"/>, and the group is then left alone: the verdict
+    /// (stopping the countdown and sending the group back to where it spawned) belongs to whoever owns it — a
+    /// mod mirrors it to the other machines here, and replays the verdict it is told about with
+    /// <see cref="IWorkSceneGuests.StopPatientCountdown"/> and <see cref="GuestProxy.MoveToSpawn"/>.
+    /// </summary>
+    void OnGroupQueuePatienceDepleted(GuestHandle group) { }
+
     void OnPrePlayerRepel(int deskCode, ref bool cancelInvocation) { }
 
     void OnGroupLeft(GuestHandle group, GuestLeaveKind kind) { }

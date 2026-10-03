@@ -163,6 +163,42 @@ internal sealed class WorkSceneGuestServing : IWorkSceneGuests
         StockGate.Bypass(() => GuestsManager.instance.EvaluateOrder(native, false, null));
     }
 
+    public bool CanQueue(GuestHandle group)
+    {
+        ServiceScope.Require();
+        return EntitySeams.GuestOf(group) is { } native && GuestGroupController.CanQueue(native.GuestCount);
+    }
+
+    public bool TryQueue(GuestHandle group, bool tryToJumpQueue = false)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native)
+            return false;
+        if (!GuestGroupController.CanQueue(native.GuestCount))
+            return false;
+
+        // The game's own queue branch (GuestsManager.PostInitializeGuestGroup), step for step, except for the
+        // verdict: the walk into a waiting seat, the countdown armed when the walk ends, the registration with
+        // the manager. The armed countdown callback does nothing when the patience runs out — a replayed queue
+        // entry is the host's verdict to give, not the replaying machine's — and the listeners hear the
+        // depletion from the countdown seam (see GuestSeams.QueueCountdown) either way.
+        native.MoveToQueue(
+            (Il2CppSystem.Action<GuestGroupController>)(Action<GuestGroupController>)(arrived =>
+                GuestsManager.instance.AddToPatientCountdown(
+                    arrived,
+                    (Il2CppSystem.Action<GuestGroupController>)(Action<GuestGroupController>)(static _ => { }))),
+            tryToJumpQueue);
+        GuestsManager.instance.SpawnGuest(native);
+        return true;
+    }
+
+    public void StopPatientCountdown(GuestHandle group)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is { } native)
+            GuestsManager.instance.RemoveFromPatientCountdown(native);
+    }
+
     private static void LeaveNow(GuestGroupController group, GuestLeaveKind kind)
     {
         var manager = GuestsManager.instance;

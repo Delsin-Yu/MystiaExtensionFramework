@@ -179,6 +179,14 @@ public interface IWorkSceneGuests
     /// <param name="group">The group whose order registration is dropped.</param>
     void CleanOrderInfo(GuestHandle group) => throw new NotSupportedException();
 
+    /// <summary>
+    /// Drops the desk arrival callback the manual order path installs next to the order it registers, so a later
+    /// arrival does not open a panel for an order that is already settled. It is named by the desk because the
+    /// cleanup also runs when the group itself is already gone.
+    /// </summary>
+    /// <param name="deskCode">The desk whose arrival callback is dropped.</param>
+    void CleanDeskArrivalCallback(int deskCode) => throw new NotSupportedException();
+
     /// <summary>Whether a group of this size still fits into the waiting seats.</summary>
     bool CanQueue(GuestHandle group) => throw new NotSupportedException();
 

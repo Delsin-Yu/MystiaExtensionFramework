@@ -248,6 +248,17 @@ internal sealed class WorkSceneGuestServing : IWorkSceneGuests, IWorkSceneDishes
             GuestsManager.instance.CleanOrderInfo(native);
     }
 
+    public void CleanDeskArrivalCallback(int deskCode)
+    {
+        ServiceScope.Require();
+        if (deskCode == -1)
+            return;
+        // The manual order path installs this callback when it registers the order; the game's own remover takes
+        // the group, so the group seated at the desk is looked up rather than kept around.
+        if (GuestsManager.instance.GetInDeskGuest(deskCode) is { } seated)
+            GuestsManager.instance.EndDlc4SpecialManualOrder(seated);
+    }
+
     /// <summary>The game's own verdict callback, handed to the manual order path in the entity layer's numbering.</summary>
     private static Il2CppSystem.Action<GuestGroupController.EvaluationResult> Verdict(Action<GuestEvaluation> onEvaluated) =>
         (Il2CppSystem.Action<GuestGroupController.EvaluationResult>)(Action<GuestGroupController.EvaluationResult>)(

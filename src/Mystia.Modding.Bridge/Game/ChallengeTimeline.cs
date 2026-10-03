@@ -21,6 +21,29 @@ internal enum ClockAction
 }
 
 /// <summary>
+/// The engine side of the boss mirror: the running challenge's own closure, as the seams reached it. The
+/// services speak in values - a life, a verdict, a cooker index - and the seam translates them to whatever the
+/// game holds; nothing here names an engine type, so the timeline can hold one without naming one either.
+/// </summary>
+internal interface IChallengeBossMirror
+{
+    /// <summary>The boss's life as the game holds it. False when the boss holds none yet.</summary>
+    bool TryReadLife(out int life);
+
+    /// <summary>
+    /// Writes the boss's life and refreshes the panel with it, the same two steps the game takes when an
+    /// order lands. False when the boss cannot be reached.
+    /// </summary>
+    bool WriteLife(int life);
+
+    /// <summary>Writes the retake's order flag. Does nothing where no such flag lives (the story attempt).</summary>
+    void WriteOrderAllowed(bool enabled);
+
+    /// <summary>Eats the cooker at <paramref name="cookerIndex"/> at the cooker layer. False when impossible.</summary>
+    bool SwallowCooker(int cookerIndex);
+}
+
+/// <summary>
 /// The timeline of the running boss challenge: the run and its phase, the phase clock, the steps the challenge
 /// main loop takes and the iterations of a phase's guest spawn loop, plus the listener pipeline over all four.
 /// <para>
@@ -39,6 +62,7 @@ internal sealed class ChallengeTimeline
 
     private int _nextRun;
     private int _nextClock;
+    private int _nextBoss;
 
     private ChallengeRunHandle _run;
     private bool _running;
@@ -61,6 +85,15 @@ internal sealed class ChallengeTimeline
     private readonly int[] _spawnCount = new int[PhaseSlots];
     private readonly ChallengeSpawnVerdict?[] _spawnVerdict = new ChallengeSpawnVerdict?[PhaseSlots];
 
+    private nint _boss;
+    private ChallengeBossHandle _bossHandle;
+    private bool? _bossOrderEnabled;
+    private int _bossLife = -1;
+    private bool _bossLifeKnown;
+    private bool _bossLifePending;
+    private bool _exitWindowOpen;
+    private bool _allowLeave = true;
+
     internal ChallengePhase Phase => _phase;
 
     internal ChallengeRunKind RunKind => _kind;
@@ -68,6 +101,61 @@ internal sealed class ChallengeTimeline
     internal float RemainingSeconds => _clockRunning ? _clockRemaining : -1f;
 
     internal ChallengeClockHandle Clock => _clockRunning ? _clock : default;
+
+    /// <summary>The engine side of the boss mirror; null until the run's own closure was reached.</summary>
+    internal IChallengeBossMirror? BossMirror;
+
+    /// <summary>
+    /// Re-issues a leave the gate held, installed by the leave seam so the switch can release a leave that
+    /// arrived while it was still closed. Null until the seam saw its first leave.
+    /// </summary>
+    internal Action? LeaveRetry;
+
+    /// <summary>The boss the run reached, default before its third phase looked the boss up.</summary>
+    internal ChallengeBossHandle Boss => _bossHandle;
+
+    /// <summary>The framework's verdict for the boss's order flag, or null while the game owns it.</summary>
+    internal bool? BossOrderVerdict => _bossOrderEnabled;
+
+    /// <summary>
+    /// The boss's life: what the game reported last, or what a mod wrote, or -1 while nothing did. The mirror
+    /// is read live when the boss can be reached, so a change the game made without telling the panel is seen
+    /// too.
+    /// </summary>
+    internal int BossLife
+    {
+        get
+        {
+            if (BossMirror is { } mirror && mirror.TryReadLife(out var life))
+                return life;
+            return _bossLife;
+        }
+    }
+
+    /// <summary>Whether the challenge's scene may be left right now (the services' switch, gated by the window).</summary>
+    internal bool AllowLeaveScene => _allowLeave;
+
+    /// <summary>
+    /// Whether the game may leave the scene now. While a run the framework owns still owns the scene the leave
+    /// is held, and the switch only has a say inside the exit window, which the run's own end opens.
+    /// </summary>
+    internal bool MayLeaveScene() => !OwnsScene || (_exitWindowOpen && _allowLeave);
+
+    /// <summary>Whether the framework owns the scene: a run is live, or its exit window is still open.</summary>
+    private bool OwnsScene => _running || _exitWindowOpen;
+
+    /// <summary>
+    /// Opens the exit window, which is the challenge's own way out: a leave the gate held while the challenge was
+    /// live is released at once, because the challenge's exit is exactly what the hold waited for and losing the
+    /// game's own leave would leave the scene hanging. A mod that keeps the switch shut keeps holding it, and the
+    /// retry is the seam's, so the leave is re-issued where re-entering the scene machinery is safe.
+    /// </summary>
+    private void OpenExitWindow()
+    {
+        _exitWindowOpen = true;
+        if (_allowLeave)
+            LeaveRetry?.Invoke();
+    }
 
     /// <summary>
     /// Whether the phase's end is held right now: the clock reached its own stopping condition and a listener
@@ -100,8 +188,24 @@ internal sealed class ChallengeTimeline
         _running = false;
         _phase = ChallengePhase.None;
         _displayer = 0;
+        BossMirror = null;
         DropClock();
         Array.Clear(_spawnVerdict);
+        // The run is over, which is the challenge's exit window: the game goes on to close the izakaya and leave
+        // the scene, and only from here on may the leave gate let a leave through.
+        OpenExitWindow();
+    }
+
+    /// <summary>
+    /// The challenge's own exit began - the game started closing the izakaya for the challenge. The exit window
+    /// opens here as well as at the run's end, because the game may ask to leave the scene inside the step that
+    /// starts the close, before the loop ever returns.
+    /// </summary>
+    internal void ExitWindowOpened()
+    {
+        if (!_running)
+            return;
+        OpenExitWindow();
     }
 
     /// <summary>The run's retake flag, read from the loop once its first step assigned it.</summary>
@@ -153,6 +257,16 @@ internal sealed class ChallengeTimeline
         _kind = ChallengeRunKind.Story;
         _displayer = 0;
         _spawnPosition = default;
+        _boss = 0;
+        _bossHandle = default;
+        _bossOrderEnabled = null;
+        _bossLife = -1;
+        _bossLifeKnown = false;
+        _bossLifePending = false;
+        _exitWindowOpen = false;
+        _allowLeave = true;
+        BossMirror = null;
+        LeaveRetry = null;
         DropClock();
         Array.Clear(_armed);
         Array.Clear(_clockRan);
@@ -380,6 +494,148 @@ internal sealed class ChallengeTimeline
         return true;
     }
 
+    // ---- the boss -----------------------------------------------------------------------------------
+
+    /// <summary>Whether the panel at <paramref name="displayer"/> is this run's own status panel.</summary>
+    internal bool IsStatusPanel(nint displayer) => _displayer != 0 && _displayer == displayer;
+
+    /// <summary>
+    /// The run's own closure was reached, so the boss lives in it from now on. What a mod armed before the boss
+    /// existed is written into the fresh mirror at once - the order verdict and a life write that could not land
+    /// yet - because the run seam reaches the closure on every one of its steps.
+    /// </summary>
+    internal void AttachBossMirror(IChallengeBossMirror mirror)
+    {
+        if (!_running)
+            return;
+        BossMirror = mirror;
+        if (_bossOrderEnabled is { } verdict)
+            mirror.WriteOrderAllowed(verdict);
+        if (_bossLifePending)
+        {
+            mirror.WriteLife(_bossLife);
+            _bossLifePending = false;
+        }
+    }
+
+    /// <summary>
+    /// The run looked its boss up, which the challenge does with the same lookup a mod would: the controlled
+    /// guest group of the run. The handle counts up, so a handle of a finished run never equals a later one,
+    /// and it stays valid until the next run starts.
+    /// </summary>
+    internal void CaptureBoss(nint pointer)
+    {
+        if (!_running || pointer == 0 || pointer == _boss)
+            return;
+        _boss = pointer;
+        _bossHandle = new ChallengeBossHandle(++_nextBoss);
+    }
+
+    /// <summary>
+    /// Arms the framework's verdict for the boss's order flag. Null leaves the flag to the game again, which
+    /// means the flag keeps whatever the game last assigned. The verdict is written into the retake's flag
+    /// where one lives, both now and at every step of the loop that assigns it.
+    /// </summary>
+    internal void ArmBossOrder(bool? enabled)
+    {
+        _bossOrderEnabled = enabled;
+        if (enabled is { } verdict)
+            BossMirror?.WriteOrderAllowed(verdict);
+    }
+
+    /// <summary>
+    /// Writes the armed verdict into the retake's order flag again, called from the step that assigns the flag:
+    /// the game assigns it at the start of that step, so writing here is what makes the framework's verdict the
+    /// one the flag holds for the interval it governs. A null verdict leaves the game's own assignment alone.
+    /// </summary>
+    internal void ReapplyBossOrder()
+    {
+        if (_bossOrderEnabled is { } verdict)
+            BossMirror?.WriteOrderAllowed(verdict);
+    }
+
+    /// <summary>
+    /// Writes the boss's life the way the game does. The write reaches the boss when it is reachable, and is
+    /// otherwise kept and landed as soon as the run reaches it. A write is not a change report: only what the
+    /// game itself does to the life is reported to the listeners.
+    /// </summary>
+    internal void WriteBossLife(int life)
+    {
+        _bossLife = life;
+        _bossLifeKnown = true;
+        if (BossMirror is { } mirror)
+        {
+            mirror.WriteLife(life);
+            _bossLifePending = false;
+        }
+        else
+        {
+            _bossLifePending = true;
+        }
+    }
+
+    /// <summary>
+    /// The game changed the boss's life. Reported once per value, and only while a run is live: the panel
+    /// reports both the context it is told and every progress it is handed, and the two can repeat.
+    /// </summary>
+    internal void BossLifeReported(int life)
+    {
+        if (!_running)
+            return;
+        if (_bossLifeKnown && _bossLife == life)
+            return;
+        _bossLife = life;
+        _bossLifeKnown = true;
+        Dispatch.Run<IChallengeListener>(listener => listener.OnChallengeBossLifeChanged(life));
+    }
+
+    /// <summary>The run's failure story started; the failure close runs after it, once the story is over.</summary>
+    internal void FailureStarted()
+    {
+        if (!_running)
+            return;
+        Dispatch.Run<IChallengeListener>(listener => listener.OnChallengeFailureStarted());
+    }
+
+    /// <summary>
+    /// The retake's boss buff ended, which is the game's own cleanup for it: the cookers the framework
+    /// swallowed are unlocked the same way the game unlocks its own, and the cleanup is reported.
+    /// </summary>
+    internal void BuffEnded()
+    {
+        if (!_running)
+            return;
+        Dispatch.Run<IChallengeListener>(listener => listener.OnChallengeBuffEnded());
+    }
+
+    /// <summary>The boss swallowed a cooker: reported, and the framework's mirror never hides a swallow.</summary>
+    internal void CookerSwallowed(int cookerIndex)
+    {
+        if (!_running)
+            return;
+        Dispatch.Run<IChallengeListener>(listener => listener.OnChallengeCookerSwallowed(cookerIndex));
+    }
+
+    /// <summary>
+    /// Eats a cooker at the cooker layer. False when no boss is mirrored or the index is not a desk. A swallow
+    /// that happened is reported to the listeners, so a mod cannot tell the game's own swallow from the replay.
+    /// </summary>
+    internal bool SwallowCooker(int cookerIndex)
+    {
+        if (BossMirror is not { } mirror || !mirror.SwallowCooker(cookerIndex))
+            return false;
+        CookerSwallowed(cookerIndex);
+        return true;
+    }
+
+    /// <summary>Sets the leave switch. Opening it re-issues a leave the gate held while it was shut.</summary>
+    internal void SetAllowLeaveScene(bool allow)
+    {
+        _allowLeave = allow;
+        if (allow)
+            LeaveRetry?.Invoke();
+    }
+
     // ---- internals ---------------------------------------------------------------------------------
 
     private ChallengeClockTick Tick(float remaining) => new(_clock, _phase, remaining, Progress(remaining));
@@ -465,5 +721,62 @@ internal sealed class ChallengeServices : IWorkSceneChallengeServices
         ServiceScope.Require();
         if (!ChallengeTimeline.Shared.RequestClockEnd())
             throw new InvalidOperationException("No challenge phase clock is running.");
+    }
+
+    public ChallengeBossHandle Boss
+    {
+        get
+        {
+            ServiceScope.Require();
+            return ChallengeTimeline.Shared.Boss;
+        }
+    }
+
+    public int BossLife
+    {
+        get
+        {
+            ServiceScope.Require();
+            return ChallengeTimeline.Shared.BossLife;
+        }
+        set
+        {
+            ServiceScope.Require();
+            ChallengeTimeline.Shared.WriteBossLife(value);
+        }
+    }
+
+    public bool? BossOrderEnabled
+    {
+        get
+        {
+            ServiceScope.Require();
+            return ChallengeTimeline.Shared.BossOrderVerdict;
+        }
+        set
+        {
+            ServiceScope.Require();
+            ChallengeTimeline.Shared.ArmBossOrder(value);
+        }
+    }
+
+    public bool AllowLeaveScene
+    {
+        get
+        {
+            ServiceScope.Require();
+            return ChallengeTimeline.Shared.AllowLeaveScene;
+        }
+        set
+        {
+            ServiceScope.Require();
+            ChallengeTimeline.Shared.SetAllowLeaveScene(value);
+        }
+    }
+
+    public bool SwallowCooker(int cookerIndex)
+    {
+        ServiceScope.Require();
+        return ChallengeTimeline.Shared.SwallowCooker(cookerIndex);
     }
 }

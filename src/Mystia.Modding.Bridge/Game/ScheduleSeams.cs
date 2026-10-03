@@ -1,9 +1,39 @@
+using System.Reflection;
+using GameData.Profile;
 using GameData.RunTime.Common;
 using HarmonyLib;
 using Il2CppInterop.Runtime;
 using Mystia.Listeners;
 
 namespace Mystia.Modding.Bridge;
+
+/// <summary>
+/// The listener pipelines of the scheduler seams. Both are pure dispatch, so the order the listeners are asked
+/// in, what they see of each other's verdict and the scope of each interception stay testable without the game
+/// running (see the panel and schedule suite).
+/// </summary>
+internal static class SchedulePipeline
+{
+    /// <summary>
+    /// Asks every listener whether one node reward may be processed; false drops it. The reward travels by ref,
+    /// so a listener that drops it can replay that very reward through <c>IDaySceneScheduleServices.ReplayReward</c>.
+    /// </summary>
+    internal static bool AllowReward(ref SchedulerNode.Reward reward)
+    {
+        var cancel = false;
+        foreach (var listener in Dispatch.Instances<IScheduleListener>())
+            listener.OnPreRewardProcessed(ref reward, ref cancel);
+        return !cancel;
+    }
+
+    /// <summary>The Reimu money box protection window opened; every listener sees it.</summary>
+    internal static void EnterReimuProtection() =>
+        Dispatch.Run<IScheduleListener>(listener => listener.OnReimuProtectionEntered());
+
+    /// <summary>The Reimu money box protection window closed; every listener sees it.</summary>
+    internal static void ExitReimuProtection() =>
+        Dispatch.Run<IScheduleListener>(listener => listener.OnReimuProtectionExited());
+}
 
 /// <summary>
 /// The scheduler seams. Events, rewards and the two day end stages are driven by the scheduler's own static
@@ -30,15 +60,10 @@ internal static class ScheduleSeams
     [HarmonyPatch(typeof(RunTimeScheduler), nameof(RunTimeScheduler.ProcessReward))]
     private static class Rewarding
     {
-        // ProcessReward applies one node reward; the reward itself is only passed to the game, so the
-        // listener gets the veto and the replaying mod keeps the reward data on its own side.
-        private static bool Prefix()
-        {
-            var cancel = false;
-            foreach (var listener in Dispatch.Instances<IScheduleListener>())
-                listener.OnPreRewardProcessed(ref cancel);
-            return !cancel;
-        }
+        // ProcessReward applies one node reward. The reward is handed to the listener by ref, which is what lets
+        // a listener recognise the reward it means (a MoveToChallenge reward, say) and replay that same reward
+        // later; the reward is only passed to the game after every listener left it alone.
+        private static bool Prefix(ref SchedulerNode.Reward reward) => SchedulePipeline.AllowReward(ref reward);
     }
 
     // OnDayEnd/OnAfterDayEnd only queue the callback for the day end chain; cancelling keeps this stage of
@@ -81,13 +106,42 @@ internal static class ScheduleSeams
             onFinish = DelegateSupport.ConvertDelegate<Il2CppSystem.Action>(replacement)!;
         return !cancel;
     }
-
-    // Deliberately not migrated: the Reimu money box protection window. Its only entry is the compiler
-    // generated local function ReimuProtection(Action) inside AddReimuPositiveSpellToWorkScene, which the
-    // interop generator names Method_Internal_Static_Void_Action_0 (GameData.RunTime.Common.RunTimeScheduler;
-    // the name is unique in the interop and the body is
-    // SpawnSpecialGuestGroup -> TriggerPositiveBuff -> RepellAndLeaveNoPay). Reporting the window needs an
-    // enter/exit notification pair that IScheduleListener does not have (revision v5 dropped it), and the
-    // bridge does not change the SDK on its own, so the mod side keeps its own patch until the SDK grows a
-    // member for it.
 }
+
+/// <summary>
+/// The Reimu money box protection window. Its only landing point is the compiler generated local function
+/// <c>ReimuProtection(Action)</c> inside <c>AddReimuPositiveSpellToWorkScene</c>, which the interop exposes
+/// under a numbered name; the window is that function's whole body
+/// (<c>SpawnSpecialGuestGroup -> TriggerPositiveBuff -> RepellAndLeaveNoPay</c>), which is why the notification
+/// pair brackets the function itself and not the spawn call inside it.
+/// </summary>
+internal static class ReimuProtectionWindow
+{
+    /// <summary>The interop name of the local function; the ordinal is part of it and moves with the build.</summary>
+    internal const string MemberName = nameof(RunTimeScheduler.Method_Internal_Static_Void_Action_0);
+
+    /// <summary>The name the game's own source gives that member: <c>&lt;AddReimuPositiveSpellToWorkScene&gt;g__ReimuProtection|160_0</c>.</summary>
+    internal const string NativeName = "<AddReimuPositiveSpellToWorkScene>g__ReimuProtection|160_0";
+
+    // Resolved and checked by name when this type is first touched, i.e. from the Prepare below. A missing
+    // member, or one whose IL2CPP name is a different local function, throws here instead of patching the
+    // wrong method.
+    private static readonly MethodInfo Located = NamedSeams.LocateIl2Cpp(typeof(RunTimeScheduler), MemberName, NativeName);
+
+    [HarmonyPatch(typeof(RunTimeScheduler), MemberName)]
+    private static class Window
+    {
+        // Patch installation runs Prepare before it applies anything, so a window that cannot be located is
+        // reported then and left uninstalled: the exception reaches the bridge's own installer, which logs it
+        // per patch class (GameBridgeHook.Install).
+        [HarmonyPrepare]
+        private static void Prepare() => _ = Located;
+
+        [HarmonyPrefix]
+        private static void Enter() => SchedulePipeline.EnterReimuProtection();
+
+        [HarmonyPostfix]
+        private static void Exit() => SchedulePipeline.ExitReimuProtection();
+    }
+}
+

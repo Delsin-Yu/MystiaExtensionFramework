@@ -10,7 +10,8 @@ namespace Mystia.Scenes;
 
 // Views are the framework's own types: the game has no such classes. The bridge builds one from the game
 // panel it is sitting in (the internal constructor) and hands it to listeners in place of the panel itself.
-// A view is only valid while that panel is open, so a mod must not keep one past the callback that gave it.
+// A view of a panel is only valid while that panel is open, so a mod must not keep one past the callback that
+// gave it; ServeCallbackView is the exception and stays valid for the whole opening it stands for.
 
 /// <summary>The work scene serve panel of one desk.</summary>
 public sealed class ServePannelView
@@ -141,6 +142,55 @@ public sealed class PrepConfigView
         _panel.ClosePanel();
         return fade;
     }
+}
+
+/// <summary>Which deferred callback of one serve panel opening is about to run.</summary>
+public enum ServeCallbackKind
+{
+    /// <summary>The order was fulfilled and the game is about to evaluate it.</summary>
+    OrderEvaluate,
+
+    /// <summary>The order was not filled and the guest is about to recover patience instead.</summary>
+    PatientRecover,
+
+    /// <summary>The food of the order is about to be shown on the desk.</summary>
+    FoodDeliverStatusUpdated,
+
+    /// <summary>The beverage of the order is about to be shown on the desk.</summary>
+    BeverageDeliverStatusUpdated,
+}
+
+/// <summary>
+/// The four callbacks one <c>WorkSceneSustainedPannel.OpenServePanel</c> call registers, with the order they
+/// were opened for.
+/// <para>
+/// The serve panel runs them after it opened, and in throw deliver mode it copies them into its throw routine
+/// and invokes them once the animation lands — which can be later than the order they were opened for. Such a
+/// stale callback then evaluates the desk's next order or writes the previous dish onto it.
+/// </para>
+/// <para>
+/// One view belongs to one opening, never to the panel: the panel opens again for the next order while the
+/// callbacks of the previous one may still be in flight, so the two openings must not share a view. A listener is
+/// handed the view when the callbacks are registered (its chance to remember the order's state) and again before
+/// each one runs, where it may drop the ones whose order moved on.
+/// </para>
+/// </summary>
+public sealed class ServeCallbackView
+{
+    internal ServeCallbackView(GuestsManager.OrderBase order, GuestGroupController? guest)
+    {
+        Order = order;
+        Guest = guest;
+    }
+
+    /// <summary>The order the callbacks were registered for.</summary>
+    public GuestsManager.OrderBase Order { get; }
+
+    /// <summary>The guest group the callbacks were registered for; null when the call did not carry one.</summary>
+    public GuestGroupController? Guest { get; }
+
+    /// <summary>The desk of <see cref="Order"/>.</summary>
+    public int DeskCode => Order.DeskCode;
 }
 
 /// <summary>The day scene shop panel.</summary>

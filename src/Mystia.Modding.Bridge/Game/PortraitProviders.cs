@@ -71,6 +71,14 @@ internal static class PortraitProviders
 }
 
 // Named apart from PortraitSprites' PortraitSeams (the four CharacterPortrayal load seams).
+//
+// SetupPortrayalVisual is the one panel facing portrait entry point there is, so a provider covers every panel
+// that draws the player's portrait: the day HUD (UIManager.cs:193) and the note book's profile page
+// (NoteBookProfilePannel.cs:72, which hands in its mystiaPic) reach the same call, and the prefix below writes
+// the provider's sprite onto the Image it was given. The sprite lands on overrideSprite, the sprite UGUI draws
+// and SetNativeSize measures, which also covers the animated clothes portrait those panels start. The note book
+// therefore needs no seam of its own, and no second provider interface either: the panel is asked for the same
+// clothes the day HUD is.
 internal static class PortraitProviderSeams
 {
     [HarmonyPatch(typeof(DataBaseCharacter), nameof(DataBaseCharacter.SetupPortrayalVisual))]

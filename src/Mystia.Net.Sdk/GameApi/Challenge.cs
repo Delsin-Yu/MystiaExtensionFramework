@@ -129,6 +129,26 @@ namespace Mystia.Scenes
         public static bool operator !=(ChallengeStep left, ChallengeStep right) => !left.Equals(right);
     }
 
+    // Opaque token of the challenge's own boss, i.e. the guest group its third phase is fought against. The
+    // same shape as ChallengeRunHandle: a mod compares handles, there is no public way to build one.
+    /// <summary>The challenge's own boss: the guest group the third phase is fought against.</summary>
+    public readonly struct ChallengeBossHandle : IEquatable<ChallengeBossHandle>
+    {
+        internal ChallengeBossHandle(int id) => Id = id;
+
+        internal int Id { get; }
+
+        public bool Equals(ChallengeBossHandle other) => Id == other.Id;
+
+        public override bool Equals(object? obj) => obj is ChallengeBossHandle other && Equals(other);
+
+        public override int GetHashCode() => Id;
+
+        public static bool operator ==(ChallengeBossHandle left, ChallengeBossHandle right) => left.Equals(right);
+
+        public static bool operator !=(ChallengeBossHandle left, ChallengeBossHandle right) => !left.Equals(right);
+    }
+
     /// <summary>A phase that started: which phase of which run, and whether that run is the retake.</summary>
     /// <param name="Run">The run the phase belongs to.</param>
     /// <param name="Phase">The phase that started.</param>
@@ -208,6 +228,60 @@ namespace Mystia.Scenes
         /// to the phase's completion check. Throws <see cref="InvalidOperationException"/> when no clock runs.
         /// </summary>
         void EndPhaseClock();
+
+        /// <summary>
+        /// The challenge's own boss, i.e. the guest group the third phase is fought against, or the default
+        /// handle before the run reached the boss. The handle is opaque: a mod compares it, and hands it back
+        /// to whatever mod-owned code drives the boss, never to this surface.
+        /// </summary>
+        ChallengeBossHandle Boss { get; }
+
+        /// <summary>
+        /// The boss's remaining life, mirrored from the third phase's own panel, or -1 while no life was
+        /// reported. The mirror follows the game: every change the game makes to the boss's life - the panel
+        /// being told the phase's context and every order the boss eats - is reported to the listeners.
+        /// <para>
+        /// Writing it rewrites the boss's own life and refreshes the panel with it, which is exactly what the
+        /// game itself does when an order lands. A write with no boss to reach is kept and applied once the run
+        /// reaches it; a write is never reported to the listeners, because only the game's own changes are.
+        /// </para>
+        /// </summary>
+        int BossLife { get; set; }
+
+        /// <summary>
+        /// Whether the boss may order, i.e. the flag the retake's third phase assigns while its stand spawn
+        /// loop runs and its order loop waits on. Null, the default, leaves the flag to the game; true or
+        /// false is the verdict the framework writes into the flag at the step that assigns it, so the game's
+        /// own decision for the interval that flag governs is replaced.
+        /// <para>
+        /// The verdict is remembered until a mod changes it or the run ends, and it has no effect outside the
+        /// retake's third phase, whose spawn loop is the only thing that assigns the flag.
+        /// </para>
+        /// </summary>
+        bool? BossOrderEnabled { get; set; }
+
+        /// <summary>
+        /// Whether the challenge's scene may be left. The framework holds the game's own leave
+        /// (<c>NightSceneDirector.TryLeaveSession</c>) while a challenge it owns still runs, so a leave only
+        /// passes inside the challenge's exit window - the run ended and the game is on its way out. Inside
+        /// that window this is the switch: true (the default) lets the leave through, false holds it and
+        /// re-issues it as soon as it is set back to true. Outside the window the value is read back but has
+        /// no say, because the challenge still owns the scene.
+        /// </summary>
+        bool AllowLeaveScene { get; set; }
+
+        /// <summary>
+        /// Swallows the cooker at <paramref name="cookerIndex"/> - an index into the cooker desks the scene
+        /// has - the way the challenge's own swallow does it: the cooking at that desk is interrupted, the
+        /// desk is hidden and locked for the rest of the boss buff. This is the replay a peer that was told
+        /// which cooker the boss ate runs, and it reports the swallow to the listeners like the game's own one
+        /// does.
+        /// <para>
+        /// Returns false when no boss run is mirrored or the index names no cooker desk. Swallowing a desk
+        /// twice is harmless and reports nothing the second time.
+        /// </para>
+        /// </summary>
+        bool SwallowCooker(int cookerIndex);
     }
 }
 
@@ -282,5 +356,35 @@ namespace Mystia.Listeners
 
         /// <summary>The iteration reported by <paramref name="attempt"/> ran and spawned its guests.</summary>
         void OnChallengeGuestSpawned(ChallengeSpawnAttempt attempt) { }
+
+        /// <summary>
+        /// The running challenge's failure story started: the game has disabled the player's panels, cleared
+        /// the counted and timed buffs and told the scheduler the challenge failed, and is about to wait for
+        /// that failure to be acknowledged. The failure close - the izakaya closed with the challenge's own
+        /// close type - runs after the wait, never before it.
+        /// </summary>
+        void OnChallengeFailureStarted() { }
+
+        /// <summary>
+        /// The retake's boss buff ended, i.e. the game ran its own cleanup for that buff: the order rate
+        /// modifier it added was taken back, the cookers the boss swallowed were unlocked again and their
+        /// effects destroyed. This is the retake's third phase only, and the notification is a report: the
+        /// cleanup happened already.
+        /// </summary>
+        void OnChallengeBuffEnded() { }
+
+        /// <summary>
+        /// The boss's life changed, as the third phase's panel was told to show it. The value is the new life,
+        /// so a listener that mirrors the boss elsewhere can follow the game.
+        /// </summary>
+        void OnChallengeBossLifeChanged(int life) { }
+
+        /// <summary>
+        /// The boss swallowed the cooker at <paramref name="cookerIndex"/> (an index into the cooker desks the
+        /// scene has), which is the game's own swallow only: a swallow a mod ran through
+        /// <c>IWorkSceneChallengeServices.SwallowCooker</c> is not hidden from the listeners, but it is
+        /// reported by the same callback. The lock the swallow takes is released when the boss buff ends.
+        /// </summary>
+        void OnChallengeCookerSwallowed(int cookerIndex) { }
     }
 }

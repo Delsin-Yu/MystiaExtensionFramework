@@ -109,6 +109,21 @@ public interface IWorkListener
 
     void OnPreTimeModeSet(GameTimeManager manager, ref GameTimeManager.TimeMode mode, ref bool cancelInvocation);
 
+    /// <summary>
+    /// The deferred callbacks of one serve panel opening were registered; the panel runs them after it opens
+    /// (in throw deliver mode after the animation lands). This is where a listener remembers what the order of
+    /// <paramref name="callbacks"/> looked like when that happened, which <c>OnPreServeCallback</c> is later
+    /// asked to judge it by.
+    /// </summary>
+    void OnServeCallbacksRegistered(ServeCallbackView callbacks) { }
+
+    /// <summary>
+    /// One deferred callback of <paramref name="callbacks"/> is about to run. Set <c>cancelInvocation</c> to
+    /// drop it, which is how the callbacks of an order that moved on are kept from evaluating the desk's next
+    /// order or writing the previous dish onto it.
+    /// </summary>
+    void OnPreServeCallback(ServeCallbackView callbacks, ServeCallbackKind kind, ref bool cancelInvocation) { }
+
     void OnServeFinished(ServePannelView view) { }
 
     void OnOrdersRefreshed(ServePannelView view) { }

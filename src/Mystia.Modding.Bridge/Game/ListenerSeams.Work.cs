@@ -7,6 +7,7 @@ using Il2CppInterop.Runtime.InteropTypes;
 using Mystia.Listeners;
 using Mystia.Scenes;
 using NightScene.CookingUtility;
+using NightScene.GuestManagementUtility;
 using NightScene.UI.CookingUtility;
 using NightScene.UI.GuestManagementUtility;
 using PrepNightScene.UI;
@@ -131,6 +132,114 @@ internal static class WorkListenerSeams
                 listener.OnPreTimeModeSet(__instance, ref mode, ref cancel);
             return !cancel;
         }
+    }
+}
+
+/// <summary>
+/// The deferred callbacks of one serve panel opening. The serve panel keeps them in its open context and runs
+/// them after the panel opened; in throw deliver mode it copies them into its throw routine and invokes them once
+/// the animation lands, so a callback can run long after the order it was opened for. Wrapping each of them with
+/// the scope of its own opening is what lets a listener drop the stale ones.
+/// </summary>
+internal static class ServeCallbackPipeline
+{
+    /// <summary>Tells every listener which callbacks this opening registered and for which order.</summary>
+    internal static void Registered(ServeCallbackView callbacks) =>
+        Dispatch.Run<IWorkListener>(listener => listener.OnServeCallbacksRegistered(callbacks));
+
+    /// <summary>
+    /// Asks every listener whether one deferred callback may run; false drops it. Every listener is asked, and
+    /// each of them sees the verdict the previous one left behind.
+    /// </summary>
+    internal static bool Allowed(ServeCallbackView callbacks, ServeCallbackKind kind)
+    {
+        var cancel = false;
+        foreach (var listener in Dispatch.Instances<IWorkListener>())
+            listener.OnPreServeCallback(callbacks, kind, ref cancel);
+        return !cancel;
+    }
+}
+
+/// <summary>
+/// The seam over the serve panel's deferred callbacks: every callback of an opening is wrapped so the listeners
+/// can judge it, and the opening itself is announced first.
+/// </summary>
+internal static class ServeCallbackSeams
+{
+    [HarmonyPatch(typeof(NightScene.UI.WorkSceneSustainedPannel), nameof(NightScene.UI.WorkSceneSustainedPannel.OpenServePanel))]
+    private static class CallbacksRegistering
+    {
+        // The callbacks are wrapped — and the opening announced — only when a listener is registered at all:
+        // without one the game keeps its own delegates and pays nothing. A call that carries no order has nothing
+        // to qualify its callbacks by and is left alone as well.
+        private static void Prefix(
+            ref Il2CppSystem.Action onOrderEvaluate,
+            ref Il2CppSystem.Action<int> onRecoverPatient,
+            ref Il2CppSystem.Action<UnityEngine.Sprite> onFoodDelieverStatusUpdated,
+            ref Il2CppSystem.Action<UnityEngine.Sprite> onBevDelieverStatusUpdated,
+            GuestsManager.OrderBase order,
+            GuestGroupController currentGuestController)
+        {
+            if (order is null || !Dispatch.Instances<IWorkListener>().Any())
+                return;
+
+            var callbacks = new ServeCallbackView(order, currentGuestController);
+            onOrderEvaluate = Evaluate(callbacks, ServeCallbackKind.OrderEvaluate, onOrderEvaluate);
+            onRecoverPatient = Patient(callbacks, ServeCallbackKind.PatientRecover, onRecoverPatient);
+            onFoodDelieverStatusUpdated = DeliverStatus(callbacks, ServeCallbackKind.FoodDeliverStatusUpdated, onFoodDelieverStatusUpdated);
+            onBevDelieverStatusUpdated = DeliverStatus(callbacks, ServeCallbackKind.BeverageDeliverStatusUpdated, onBevDelieverStatusUpdated);
+            ServeCallbackPipeline.Registered(callbacks);
+        }
+
+        // One wrapper per callback shape: each runs the game's own callback only when the listeners left this
+        // callback of this opening alone. The game's callback is null checked because nothing promises every
+        // caller fills in all four.
+        private static Il2CppSystem.Action Evaluate(ServeCallbackView callbacks, ServeCallbackKind kind, Il2CppSystem.Action? original) =>
+            (Action)(() =>
+            {
+                if (ServeCallbackPipeline.Allowed(callbacks, kind))
+                    original?.Invoke();
+            });
+
+        private static Il2CppSystem.Action<int> Patient(ServeCallbackView callbacks, ServeCallbackKind kind, Il2CppSystem.Action<int>? original) =>
+            (Action<int>)(value =>
+            {
+                if (ServeCallbackPipeline.Allowed(callbacks, kind))
+                    original?.Invoke(value);
+            });
+
+        private static Il2CppSystem.Action<UnityEngine.Sprite> DeliverStatus(
+            ServeCallbackView callbacks,
+            ServeCallbackKind kind,
+            Il2CppSystem.Action<UnityEngine.Sprite>? original) =>
+            (Action<UnityEngine.Sprite>)(sprite =>
+            {
+                if (ServeCallbackPipeline.Allowed(callbacks, kind))
+                    original?.Invoke(sprite);
+            });
+    }
+}
+
+/// <summary>
+/// The night scene's own fast forward: the work scene panel's submit, which repels the seated guests and pushes
+/// the clock to the end of the night. The day scene's fast forward is the <see cref="IDayUiListener"/> seam
+/// (DayUiListenerSeams), so a listener can tell the two apart by the interface it is asked on.
+/// </summary>
+internal static class WorkFastForwardSeams
+{
+    /// <summary>Asks every work scene UI listener whether the fast forward may start; false keeps it from running.</summary>
+    internal static bool Allowed()
+    {
+        var cancel = false;
+        foreach (var listener in Dispatch.Instances<IWorkUiListener>())
+            listener.OnPreFastForward(ref cancel);
+        return !cancel;
+    }
+
+    [HarmonyPatch(typeof(NightScene.UI.WorkSceneSustainedPannel), nameof(NightScene.UI.WorkSceneSustainedPannel.OnFastForwardSubmit))]
+    private static class Submitting
+    {
+        private static bool Prefix() => Allowed();
     }
 }
 

@@ -410,6 +410,299 @@ public sealed class ChallengeTests : IDisposable
         }
     }
 
+    // ---- the failure story and the buff end -----------------------------------------------------------
+
+    [Fact]
+    public void AFailureStoryStartIsReportedOnlyInsideARun()
+    {
+        var recorder = new Recorder([], "only");
+        Listen(recorder);
+
+        // No run: the timeline owns no challenge, so another challenge's failure is not reported as this one's.
+        Timeline.FailureStarted();
+        Assert.Empty(recorder.Events);
+
+        StartRun();
+        Timeline.FailureStarted();
+
+        Assert.Equal(new[] { "only:failure" }, recorder.Events);
+    }
+
+    [Fact]
+    public void ABuffEndIsReportedOnlyInsideARun()
+    {
+        var recorder = new Recorder([], "only");
+        Listen(recorder);
+
+        Timeline.BuffEnded();
+        Assert.Empty(recorder.Events);
+
+        StartRun();
+        Timeline.BuffEnded();
+        Timeline.EndRun();
+        Timeline.BuffEnded();
+
+        // The run's own end is followed by its exit, whose buff teardown is not this timeline's report any more.
+        Assert.Equal(new[] { "only:buff-ended" }, recorder.Events);
+    }
+
+    // ---- the boss -----------------------------------------------------------------------------------
+
+    [Fact]
+    public void ABossLifeReportMirrorsTheValueAndReportsEveryChangeOnce()
+    {
+        var recorder = new Recorder([], "only");
+        StartRun();
+        Listen(recorder);
+
+        Assert.Equal(-1, Timeline.BossLife);
+
+        // The panel is told the same context and the same progress more than once, so a repeat is not a change.
+        Timeline.BossLifeReported(50);
+        Timeline.BossLifeReported(50);
+        Timeline.BossLifeReported(40);
+
+        Assert.Equal(40, Timeline.BossLife);
+        Assert.Equal(new[] { "only:life:50", "only:life:40" }, recorder.Events);
+    }
+
+    [Fact]
+    public void WritingTheBossLifeReachesTheMirrorWithoutReportingIt()
+    {
+        var mirror = new FakeBossMirror();
+        var recorder = new Recorder([], "only");
+        StartRun();
+        Timeline.AttachBossMirror(mirror);
+        Listen(recorder);
+
+        Timeline.WriteBossLife(33);
+
+        Assert.Equal(33, mirror.WrittenLife);
+        Assert.Equal(33, Timeline.BossLife);
+        // A write is not a change report: only what the game does to the life is reported.
+        Assert.Empty(recorder.Events);
+
+        // The game then echoing the same value back is not a change either.
+        Timeline.BossLifeReported(33);
+        Assert.Empty(recorder.Events);
+    }
+
+    [Fact]
+    public void AnArmedBossOrderVerdictIsWrittenAndReappliedAtTheStepThatAssignsIt()
+    {
+        var mirror = new FakeBossMirror();
+        StartRun();
+        Timeline.AttachBossMirror(mirror);
+
+        Assert.Null(Timeline.BossOrderVerdict);
+
+        Timeline.ArmBossOrder(false);
+        Assert.Equal(false, Timeline.BossOrderVerdict);
+        Assert.Equal(false, mirror.Order);
+        Assert.Equal(1, mirror.WriteOrderCalls);
+
+        // The game assigns the flag at the start of the spawn loop's step, so the verdict is written again after.
+        Timeline.ReapplyBossOrder();
+        Assert.Equal(false, mirror.Order);
+        Assert.Equal(2, mirror.WriteOrderCalls);
+
+        // Null hands the flag back to the game: nothing is written for it any more.
+        Timeline.ArmBossOrder(null);
+        Timeline.ReapplyBossOrder();
+        Assert.Null(Timeline.BossOrderVerdict);
+        Assert.Equal(2, mirror.WriteOrderCalls);
+    }
+
+    [Fact]
+    public void AVerdictArmedBeforeTheBossIsReachedLandsWhenTheMirrorArrives()
+    {
+        StartRun();
+        Timeline.ArmBossOrder(true);
+        Timeline.WriteBossLife(70);
+
+        var mirror = new FakeBossMirror();
+        Timeline.AttachBossMirror(mirror);
+
+        Assert.Equal(true, mirror.Order);
+        Assert.Equal(1, mirror.WriteOrderCalls);
+        // The life write that could not land yet lands with the mirror, and lands once.
+        Assert.Equal(70, mirror.WrittenLife);
+        Assert.Equal(1, mirror.WriteLifeCalls);
+    }
+
+    [Fact]
+    public void TheBossHandleFollowsTheRunsLookup()
+    {
+        StartRun();
+        Assert.True(Timeline.Boss == default);
+
+        Timeline.CaptureBoss(11);
+        var boss = Timeline.Boss;
+        Assert.True(boss != default);
+
+        // The same group is the same handle, and a handle of a finished run is never a later run's.
+        Timeline.CaptureBoss(11);
+        Assert.Equal(boss, Timeline.Boss);
+
+        Timeline.Reset();
+        StartRun();
+        Timeline.CaptureBoss(12);
+        Assert.True(Timeline.Boss != boss);
+    }
+
+    [Fact]
+    public void TheLeaveGateHoldsALiveRunsSceneAndOpensWithTheExitWindow()
+    {
+        StartRun();
+
+        // The framework owns the scene while the run is live, so the game's own leave is held.
+        Assert.False(Timeline.MayLeaveScene());
+
+        Timeline.EndRun();
+
+        // The run's own end is the exit window, and the switch is open by default, so the leave passes.
+        Assert.True(Timeline.MayLeaveScene());
+
+        Timeline.SetAllowLeaveScene(false);
+        Assert.False(Timeline.AllowLeaveScene);
+        Assert.False(Timeline.MayLeaveScene());
+
+        // Opening the switch again re-issues the leave the gate held.
+        var retried = false;
+        Timeline.LeaveRetry = () => retried = true;
+        Timeline.SetAllowLeaveScene(true);
+        Assert.True(retried);
+        Assert.True(Timeline.MayLeaveScene());
+    }
+
+    [Fact]
+    public void TheExitWindowOpensWithTheChallengesOwnClose()
+    {
+        var retried = 0;
+        StartRun();
+        Timeline.LeaveRetry = () => retried++;
+
+        Assert.False(Timeline.MayLeaveScene());
+
+        // The game's own close is the challenge's exit: the leave passes from here on, and a leave the gate held
+        // while the run was live was re-issued rather than lost.
+        Timeline.ExitWindowOpened();
+
+        Assert.True(Timeline.MayLeaveScene());
+        Assert.Equal(1, retried);
+
+        // A close outside a run belongs to another challenge: this timeline's window stays shut.
+        Timeline.Reset();
+        Timeline.ExitWindowOpened();
+        Assert.True(Timeline.MayLeaveScene());
+        StartRun();
+        Assert.False(Timeline.MayLeaveScene());
+    }
+
+    [Fact]
+    public void ANewRunForgetsTheBossTheVerdictAndTheLeaveWindow()
+    {
+        StartRun();
+        Timeline.CaptureBoss(5);
+        Timeline.ArmBossOrder(false);
+        Timeline.SetAllowLeaveScene(false);
+        Timeline.EndRun();
+        Assert.False(Timeline.MayLeaveScene());
+
+        Timeline.Reset();
+
+        Assert.True(Timeline.Boss == default);
+        Assert.Null(Timeline.BossOrderVerdict);
+        Assert.True(Timeline.AllowLeaveScene);
+        // With no run owned, the game's own leave is none of the framework's business.
+        Assert.True(Timeline.MayLeaveScene());
+
+        StartRun();
+        Assert.False(Timeline.MayLeaveScene());
+    }
+
+    [Fact]
+    public void SwallowingACookerNeedsARunAndReachesTheMirror()
+    {
+        var mirror = new FakeBossMirror();
+        var recorder = new Recorder([], "only");
+        Listen(recorder);
+
+        // No run: the mirror is not attached and the swallow is refused rather than reaching a scene the
+        // framework does not own.
+        Timeline.AttachBossMirror(mirror);
+        Assert.False(Timeline.SwallowCooker(3));
+        Assert.Empty(mirror.Swallowed);
+
+        StartRun();
+        Timeline.AttachBossMirror(mirror);
+        Assert.True(Timeline.SwallowCooker(3));
+        Assert.Equal(new[] { 3 }, mirror.Swallowed);
+        Assert.Equal(new[] { "only:swallowed:3" }, recorder.Events);
+
+        // A swallow the mirror could not do is not reported at all, so a report always means the cooker was eaten.
+        mirror.SwallowResult = false;
+        Assert.False(Timeline.SwallowCooker(4));
+        Assert.Equal(new[] { "only:swallowed:3" }, recorder.Events);
+    }
+
+    [Fact]
+    public void EveryHookedChallengeTargetExistsInThePinnedInterop() => ChallengeTargets.Verify();
+
+    [Fact]
+    public void TheBossServicesThrowOutsideTheSceneLoop()
+    {
+        var services = ChallengeServices.Shared;
+
+        Assert.Throws<InvalidOperationException>(() => { _ = services.Boss; });
+        Assert.Throws<InvalidOperationException>(() => { _ = services.BossLife; });
+        Assert.Throws<InvalidOperationException>(() => services.BossLife = 3);
+        Assert.Throws<InvalidOperationException>(() => { _ = services.BossOrderEnabled; });
+        Assert.Throws<InvalidOperationException>(() => services.BossOrderEnabled = false);
+        Assert.Throws<InvalidOperationException>(() => { _ = services.AllowLeaveScene; });
+        Assert.Throws<InvalidOperationException>(() => services.AllowLeaveScene = false);
+        Assert.Throws<InvalidOperationException>(() => services.SwallowCooker(0));
+    }
+
+    [Fact]
+    public void TheBossServicesAnswerInsideTheSceneLoop()
+    {
+        var services = ChallengeServices.Shared;
+        var mirror = new FakeBossMirror();
+        ServiceScope.Enter();
+        try
+        {
+            StartRun();
+            Timeline.AttachBossMirror(mirror);
+            Timeline.CaptureBoss(7);
+            Timeline.BossLifeReported(60);
+
+            Assert.True(services.Boss != default);
+            Assert.Equal(60, services.BossLife);
+
+            services.BossLife = 55;
+            Assert.Equal(55, mirror.WrittenLife);
+            Assert.Equal(55, services.BossLife);
+
+            services.BossOrderEnabled = false;
+            Assert.Equal(false, mirror.Order);
+            Assert.Equal(false, services.BossOrderEnabled);
+            services.BossOrderEnabled = null;
+            Assert.Null(services.BossOrderEnabled);
+
+            Assert.True(services.AllowLeaveScene);
+            services.AllowLeaveScene = false;
+            Assert.False(services.AllowLeaveScene);
+
+            Assert.True(services.SwallowCooker(2));
+            Assert.Equal(new[] { 2 }, mirror.Swallowed);
+        }
+        finally
+        {
+            ServiceScope.Exit();
+        }
+    }
+
     private void StartRun()
     {
         _phaseEnds.Clear();
@@ -421,6 +714,49 @@ public sealed class ChallengeTests : IDisposable
     {
         foreach (var listener in listeners)
             _registry.Add(listener);
+    }
+
+    // The engine side of the boss mirror, stood in for by a plain object: everything the services and the timeline
+    // do with a boss goes through this shape, so the whole mirror can be exercised without the game running.
+    private sealed class FakeBossMirror : IChallengeBossMirror
+    {
+        internal int WrittenLife = -1;
+
+        internal int WriteLifeCalls;
+
+        internal bool? Order;
+
+        internal int WriteOrderCalls;
+
+        internal bool SwallowResult = true;
+
+        internal List<int> Swallowed { get; } = [];
+
+        public bool TryReadLife(out int life)
+        {
+            life = WrittenLife;
+            return WrittenLife >= 0;
+        }
+
+        public bool WriteLife(int life)
+        {
+            WriteLifeCalls++;
+            WrittenLife = life;
+            return true;
+        }
+
+        public void WriteOrderAllowed(bool enabled)
+        {
+            Order = enabled;
+            WriteOrderCalls++;
+        }
+
+        public bool SwallowCooker(int cookerIndex)
+        {
+            if (SwallowResult)
+                Swallowed.Add(cookerIndex);
+            return SwallowResult;
+        }
     }
 
     private sealed class Recorder : IChallengeListener
@@ -517,5 +853,13 @@ public sealed class ChallengeTests : IDisposable
 
         public void OnChallengeGuestSpawned(ChallengeSpawnAttempt attempt) =>
             _events.Add($"{_name}:spawned:{attempt.Index}");
+
+        public void OnChallengeFailureStarted() => _events.Add($"{_name}:failure");
+
+        public void OnChallengeBuffEnded() => _events.Add($"{_name}:buff-ended");
+
+        public void OnChallengeBossLifeChanged(int life) => _events.Add($"{_name}:life:{life}");
+
+        public void OnChallengeCookerSwallowed(int cookerIndex) => _events.Add($"{_name}:swallowed:{cookerIndex}");
     }
 }

@@ -102,14 +102,23 @@ internal static class ChallengeRunSeams
         {
             Attach(__instance);
             ChallengeTimeline.Shared.StepRan(__state, __runOriginal);
-            if (__runOriginal && !__result)
-                ChallengeTimeline.Shared.EndRun();
+            if (!__runOriginal || __result)
+                return;
+            YuyukoBossMirror.Dropped();
+            ChallengeCookerSwallows.Forget();
+            ChallengeTimeline.Shared.EndRun();
         }
 
         /// <summary>
         /// Hands the loop's closure - the challenge's status displayer and the spot its phase guests spawn at -
         /// and the run's retake flag to the timeline. All three are assigned on the loop's own early steps, so
         /// they are read on every step and are null or default before that.
+        /// <para>
+        /// The same step reaches the boss mirror: the shared closure holds the boss's life and the panel, the
+        /// retake closure (the run's third one, only present for the retake) holds the order flag the stand
+        /// spawn loop assigns, and the challenge's own controlled group is the boss a mod is handed. Every one
+        /// of them is assigned on the loop's own steps, so all of them are read here on every step.
+        /// </para>
         /// </summary>
         private static void Attach(RunLoop loop)
         {
@@ -126,6 +135,11 @@ internal static class ChallengeRunSeams
             timeline.Attach(
                 displayer is null ? nint.Zero : displayer.Pointer,
                 new MirrorVector3(context.yuyukoSeatPostion));
+            timeline.AttachBossMirror(YuyukoBossMirror.Reached(context, loop.__8__3));
+            // The game's own lookup named the boss already; the run's closure names the very same group, so it
+            // is only the fallback for a build whose lookup label moved.
+            if (timeline.Boss == default && context.yuyuko is not null)
+                timeline.CaptureBoss(context.yuyuko.Pointer);
         }
     }
 }
@@ -262,8 +276,13 @@ internal static class ChallengeSpawnSeams
             return false;
         }
 
-        private static void Postfix(ChallengeSpawnAttempt __state, bool __runOriginal) =>
-            ChallengeTimeline.Shared.GuestSpawned(__state, __runOriginal);
+        private static void Postfix(Phase3SpawnLoop __instance, ChallengeSpawnAttempt __state, bool __runOriginal)
+        {
+            ChallengeTimeline.Shared.GuestSpawned(__state, __runOriginal);            // This loop is the only step that assigns the retake's order flag, so it is the step the
+            // framework's verdict is written at: writing it right after the step replaces the game's own
+            // decision for that interval, and the flag then holds the verdict until the loop assigns it again.
+            ChallengeTimeline.Shared.ReapplyBossOrder();
+        }
     }
 }
 
@@ -276,13 +295,36 @@ internal static class ChallengePhaseSeams
     [HarmonyPatch(typeof(IncomeControllerYuyuko), nameof(IncomeControllerYuyuko.SetContext))]
     private static class Entered
     {
-        private static void Postfix(IncomeControllerYuyuko __instance, IncomeControllerYuyuko.Phase phase) =>
-            ChallengeTimeline.Shared.DisplayedPhase(__instance.Pointer, phase switch
+        private static void Postfix(IncomeControllerYuyuko __instance, int currentValue, IncomeControllerYuyuko.Phase phase)
+        {
+            var timeline = ChallengeTimeline.Shared;
+            var challenge = phase switch
             {
                 IncomeControllerYuyuko.Phase.Phase1 => ChallengePhase.One,
                 IncomeControllerYuyuko.Phase.Phase2 => ChallengePhase.Two,
                 IncomeControllerYuyuko.Phase.Phase3 => ChallengePhase.Three,
                 _ => ChallengePhase.None,
-            });
+            };
+            timeline.DisplayedPhase(__instance.Pointer, challenge);
+            // The third phase's context is where the panel is told the boss's life for the first time, so the
+            // mirror starts here. The other two phases' values are the fund and the positive spell count.
+            if (challenge == ChallengePhase.Three)
+                timeline.BossLifeReported(currentValue);
+        }
+    }
+
+    [HarmonyPatch(typeof(IncomeControllerYuyuko), nameof(IncomeControllerYuyuko.SetTargetProgress))]
+    private static class Progressed
+    {
+        private static void Postfix(IncomeControllerYuyuko __instance, int targetValue)
+        {
+            // This panel is the shared income display of every night, so the report is kept to the run's own
+            // panel and to the phase whose value is the boss's life: the same method carries the fund in the
+            // first phase and the spell count in the second.
+            var timeline = ChallengeTimeline.Shared;
+            if (timeline.Phase != ChallengePhase.Three || !timeline.IsStatusPanel(__instance.Pointer))
+                return;
+            timeline.BossLifeReported(targetValue);
+        }
     }
 }

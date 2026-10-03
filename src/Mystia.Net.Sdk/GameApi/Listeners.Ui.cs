@@ -18,4 +18,11 @@ public interface IWorkUiListener
 {
     /// <summary>The work scene HUD opened (the night scene UI manager, not the day scene one).</summary>
     void OnHudOpened() { }
+
+    /// <summary>
+    /// The night scene's fast forward is about to run — the work scene panel's own submit that repels the
+    /// seated guests and pushes the clock to the end of the night, not the day scene fast forward of
+    /// <see cref="IDayUiListener.OnPreFastForward"/>. Set <c>cancelInvocation</c> to keep it from starting.
+    /// </summary>
+    void OnPreFastForward(ref bool cancelInvocation) { }
 }

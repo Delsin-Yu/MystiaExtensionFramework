@@ -259,6 +259,14 @@ public interface IWorkSceneCook
 public interface IWorkSceneStorage
 {
     void Store(Sellable sellable);
+
+    /// <summary>
+    /// Stores a dish a mod holds as the framework's own projection — the dish it took off an order slot to roll
+    /// a serve back. The member that speaks the game's sellable stays for the dishes the cook, tray and storage
+    /// paths still hand out.
+    /// </summary>
+    /// <param name="dish">The dish to put into the storage box.</param>
+    void Store(DishProxy dish) => throw new NotSupportedException();
 }
 
 public interface IWorkSceneTray

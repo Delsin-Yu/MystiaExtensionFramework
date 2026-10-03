@@ -447,6 +447,13 @@ internal sealed class WorkSceneServices : IWorkSceneServices
             ServiceScope.Require();
             IzakayaConfigure.Instance.StoreFood(sellable);
         }
+
+        public void Store(DishProxy dish)
+        {
+            ServiceScope.Require();
+            if (dish?.Native is Sellable sellable)
+                IzakayaConfigure.Instance.StoreFood(sellable);
+        }
     }
 
     private sealed class TrayServices : IWorkSceneTray

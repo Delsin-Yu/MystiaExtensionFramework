@@ -1,7 +1,10 @@
+﻿using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
 using System.Text.Json;
 using AsmResolver.DotNet;
 using AsmResolver.DotNet.Serialized;
+using AssemblyDefinition = AsmResolver.DotNet.AssemblyDefinition;
 using AsmResolver.DotNet.Signatures;
 using Il2CppInterop.Generator;
 using Il2CppInterop.Generator.Runners;
@@ -19,23 +22,51 @@ public static class Program
         // generator has to sanitise them. Passing the source names through verbatim produces assemblies
         // nothing can reference, so sanitising is the default and --passthrough only exists for comparing.
         var passthroughNames = args.Contains("--passthrough", StringComparer.OrdinalIgnoreCase);
-        var positional = args.Where(arg => !arg.StartsWith("--", StringComparison.Ordinal)).ToArray();
 
-        // The managed backup exists in several flavours per machine: an IL2CPP build writes a stripped copy next
-        // to the build output, while a Symbols build keeps a fuller one. The flavour decides whether members
-        // such as ResourceProviderBase.Release exist in the interop, so the choice must not depend on which
-        // directory the recursive search happens to reach first. --managed picks one explicitly.
-        var explicitManaged = ArgumentValue(args, "--managed");
-        var symbolsOnly = args.Contains("--symbols-backup", StringComparer.OrdinalIgnoreCase);
-
-        if (positional.Length < 2 || string.IsNullOrWhiteSpace(positional[0]) || string.IsNullOrWhiteSpace(positional[1]))
+        // An option's value is not a positional argument. Reading them apart matters: `--managed <dir>` used to
+        // leave <dir> in the positional list, where it took the output directory's place and the generator wrote
+        // the interop straight over the very assemblies it was reading.
+        var optionsWithValue = new[] { "--managed", "--output" };
+        var positional = new List<string>();
+        var explicitManaged = "";
+        var explicitOutput = "";
+        var symbolsOnly = false;
+        var allowStripped = false;
+        for (var index = 0; index < args.Length; index++)
         {
-            Console.Error.WriteLine("Usage: Mystia.InteropGen <game-project-dir> <game-install-dir> [output-dir] [unity-libs-dir] [--managed <dir>] [--symbols-backup] [--passthrough]");
+            var arg = args[index];
+            switch (arg.ToLowerInvariant())
+            {
+                case "--managed" when index + 1 < args.Length:
+                    explicitManaged = args[++index];
+                    continue;
+                case "--output" when index + 1 < args.Length:
+                    explicitOutput = args[++index];
+                    continue;
+                case "--symbols-backup":
+                    symbolsOnly = true;
+                    continue;
+                case "--allow-stripped-backup":
+                    allowStripped = true;
+                    continue;
+                case "--passthrough":
+                    continue;
+            }
+
+            if (!arg.StartsWith("--", StringComparison.Ordinal))
+                positional.Add(arg);
+        }
+
+        if (positional.Count < 2 || string.IsNullOrWhiteSpace(positional[0]) || string.IsNullOrWhiteSpace(positional[1]))
+        {
+            Console.Error.WriteLine("Usage: Mystia.InteropGen <game-project-dir> <game-install-dir> [output-dir] [unity-libs-dir] [--managed <dir>] [--output <dir>] [--symbols-backup] [--allow-stripped-backup] [--passthrough]");
             Console.Error.WriteLine("The project directory must contain a Build folder holding a Managed backup, such as");
             Console.Error.WriteLine("Build\\Symbols\\...\\Managed or Build\\<game>_BackUpThisFolder_ButDontShipItWithYourGame\\Managed.");
             Console.Error.WriteLine("The install directory must contain GameAssembly.dll and global-metadata.dat.");
             Console.Error.WriteLine("--managed takes the Managed directory verbatim (a full one is preferred over a stripped copy).");
+            Console.Error.WriteLine("--output sets the interop directory (defaults to the repository's artifacts/interop).");
             Console.Error.WriteLine("--symbols-backup requires the chosen backup to live under a Symbols folder.");
+            Console.Error.WriteLine("--allow-stripped-backup accepts a backup with no Symbols sibling, which may leave members out.");
             Console.Error.WriteLine("--passthrough keeps the source names verbatim, which no C# source can reference.");
             return 1;
         }
@@ -44,7 +75,9 @@ public static class Program
         var managed = string.IsNullOrWhiteSpace(explicitManaged) ? FindManaged(positional[0], symbolsOnly) : explicitManaged;
         var gameAssembly = Path.Combine(positional[1], "GameAssembly.dll");
         var metadata = FindMetadata(positional[1]);
-        var output = positional.ElementAtOrDefault(2) ?? Path.Combine(repo, "artifacts", "interop");
+        var output = !string.IsNullOrWhiteSpace(explicitOutput)
+            ? explicitOutput
+            : positional.ElementAtOrDefault(2) ?? Path.Combine(repo, "artifacts", "interop");
 
         if (!Directory.Exists(managed))
         {
@@ -52,7 +85,20 @@ public static class Program
             return 1;
         }
 
-        ReportBackup(managed);
+        // Writing over the source is the one mistake this tool must not make: it replaces the game's own managed
+        // assemblies with generated interop. A directory that holds Assembly-CSharp.dll but no interop manifest
+        // is a source, not an output.
+        var fullOutput = Path.GetFullPath(output);
+        if (string.Equals(fullOutput, Path.GetFullPath(managed), StringComparison.OrdinalIgnoreCase)
+            || (File.Exists(Path.Combine(fullOutput, "Assembly-CSharp.dll"))
+                && !File.Exists(Path.Combine(fullOutput, "interop-manifest.json"))))
+        {
+            Console.Error.WriteLine($"Refusing to write generated interop into '{fullOutput}': it holds assembly sources, not interop. Pass --output <dir>.");
+            return 1;
+        }
+
+        if (!ReportBackup(managed, allowStripped))
+            return 1;
 
         var unityLibs = FindUnityLibs(positional.ElementAtOrDefault(3), managed);
 
@@ -261,19 +307,55 @@ public static class Program
         return candidates.FirstOrDefault() ?? "";
     }
 
-    // The chosen backup decides whether members such as ResourceProviderBase.Release exist in the interop, so it
-    // is printed rather than left to be dug out of the manifest. A stripped backup is a common cause of a bridge
-    // that will not compile; the way out is --managed <game project>\\Library\\ScriptAssemblies, which holds the
-    // unstripped build output. (Neither flavour is authoritative for what the player can resolve at run time:
-    // that is the pinned global-metadata.dat, and a member the shipped metadata lacks must never be called.)
-    private static void ReportBackup(string managed)
+    // The chosen backup decides whether members such as ResourceProviderBase.Release exist in the interop, so the
+    // question is answered by reading the backup's own metadata table (a `strings` sweep over a managed assembly
+    // gives false negatives). A backup that lacks the member needs --allow-stripped-backup: the interop built
+    // from it will not carry it either, and the bridge overrides it.
+    private static bool ReportBackup(string managed, bool allowStripped)
     {
         Console.WriteLine($"Managed backup: {managed}");
-        if (!managed.Contains("Symbols", StringComparison.OrdinalIgnoreCase))
+        var dependencies = Path.Combine(managed, "Unity.ResourceManager.dll");
+        if (!File.Exists(dependencies))
         {
-            Console.Error.WriteLine("Note: this backup is not the Symbols flavour. If a bridge member fails to override");
-            Console.Error.WriteLine("(ResourceProviderBase.Release is the usual one), pass --managed <game-project>\\Library\\ScriptAssemblies.");
+            Console.Error.WriteLine("The backup has no Unity.ResourceManager.dll, so the Addressables provider members cannot be checked.");
+            return allowStripped;
         }
+
+        if (DeclaresMember(dependencies, "ResourceProviderBase", "Release"))
+            return true;
+
+        Console.Error.WriteLine("This backup has no ResourceProviderBase.Release, so the interop built from it will not either and");
+        Console.Error.WriteLine("Mystia.Modding.Bridge/Game/AssetProviders.cs will fail to compile (CS0115).");
+        Console.Error.WriteLine("Library/ScriptAssemblies is NOT a usable source: the unstripped project assemblies do not match the stripped");
+        Console.Error.WriteLine("engine modules and the generator throws NullReferenceException (reproduced on both machines). Use another build's");
+        Console.Error.WriteLine("fuller Managed backup, or take the generated interop from a machine whose backup has the member.");
+        return allowStripped;
+    }
+
+    // Reads the assembly's metadata table, not its string heap: whether a type declares a member is a table
+    // question, and a name can be absent from the heap while the member exists.
+    private static bool DeclaresMember(string assemblyPath, string typeName, string memberName)
+    {
+        using var stream = File.OpenRead(assemblyPath);
+        using var reader = new PEReader(stream);
+        if (!reader.HasMetadata)
+            return false;
+
+        var metadata = reader.GetMetadataReader();
+        foreach (var handle in metadata.TypeDefinitions)
+        {
+            var type = metadata.GetTypeDefinition(handle);
+            if (!metadata.GetString(type.Name).Contains(typeName, StringComparison.Ordinal))
+                continue;
+
+            foreach (var methodHandle in type.GetMethods())
+            {
+                if (metadata.GetString(metadata.GetMethodDefinition(methodHandle).Name).Contains(memberName, StringComparison.Ordinal))
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     // The IL2CPP managed backup carries Unity's own assemblies next to the game assemblies,

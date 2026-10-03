@@ -84,7 +84,7 @@ internal static class ScheduleSeams
 
     // Deliberately not migrated: the Reimu money box protection window. Its only entry is the compiler
     // generated local function ReimuProtection(Action) inside AddReimuPositiveSpellToWorkScene, which the
-    // il2cpp metadata names Method_Internal_Static_Void_Action_PDM_0 (GameData.RunTime.Common.RunTimeScheduler;
+    // interop generator names Method_Internal_Static_Void_Action_0 (GameData.RunTime.Common.RunTimeScheduler;
     // the name is unique in the interop and the body is
     // SpawnSpecialGuestGroup -> TriggerPositiveBuff -> RepellAndLeaveNoPay). Reporting the window needs an
     // enter/exit notification pair that IScheduleListener does not have (revision v5 dropped it), and the

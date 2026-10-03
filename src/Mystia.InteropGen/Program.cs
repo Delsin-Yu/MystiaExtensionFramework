@@ -14,32 +14,40 @@ public static class Program
 
     public static int Main(string[] args)
     {
-        if (args.Length < 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
+        // Il2CppInterop's own naming is what the sources reference: compiler generated members such as
+        // "<>c__DisplayClass79_0" or "<MainChallengeLoop>d__16" are not valid C# identifiers, so the
+        // generator has to sanitise them. Passing the source names through verbatim produces assemblies
+        // nothing can reference, so sanitising is the default and --passthrough only exists for comparing.
+        var passthroughNames = args.Contains("--passthrough", StringComparer.OrdinalIgnoreCase);
+        var positional = args.Where(arg => !arg.StartsWith("--", StringComparison.Ordinal)).ToArray();
+
+        if (positional.Length < 2 || string.IsNullOrWhiteSpace(positional[0]) || string.IsNullOrWhiteSpace(positional[1]))
         {
-            Console.Error.WriteLine("Usage: Mystia.InteropGen <game-project-dir> <game-install-dir> [output-dir] [unity-libs-dir]");
+            Console.Error.WriteLine("Usage: Mystia.InteropGen <game-project-dir> <game-install-dir> [output-dir] [unity-libs-dir] [--passthrough]");
             Console.Error.WriteLine("The project directory must contain a Build folder holding a Managed backup, such as");
             Console.Error.WriteLine("Build\\Symbols\\...\\Managed or Build\\<game>_BackUpThisFolder_ButDontShipItWithYourGame\\Managed.");
             Console.Error.WriteLine("The install directory must contain GameAssembly.dll and global-metadata.dat.");
+            Console.Error.WriteLine("--passthrough keeps the source names verbatim, which no C# source can reference.");
             return 1;
         }
 
         var repo = FindRepoRoot();
-        var managed = FindManaged(args[0]);
-        var gameAssembly = Path.Combine(args[1], "GameAssembly.dll");
-        var metadata = FindMetadata(args[1]);
-        var output = args.ElementAtOrDefault(2) ?? Path.Combine(repo, "artifacts", "interop");
+        var managed = FindManaged(positional[0]);
+        var gameAssembly = Path.Combine(positional[1], "GameAssembly.dll");
+        var metadata = FindMetadata(positional[1]);
+        var output = positional.ElementAtOrDefault(2) ?? Path.Combine(repo, "artifacts", "interop");
 
         if (!Directory.Exists(managed))
         {
-            Console.Error.WriteLine("Managed backup was not found under " + args[0]);
+            Console.Error.WriteLine("Managed backup was not found under " + positional[0]);
             return 1;
         }
 
-        var unityLibs = FindUnityLibs(args.ElementAtOrDefault(3), managed);
+        var unityLibs = FindUnityLibs(positional.ElementAtOrDefault(3), managed);
 
         if (!File.Exists(gameAssembly) || metadata is null)
         {
-            Console.Error.WriteLine("GameAssembly.dll or global-metadata.dat was not found under " + args[1]);
+            Console.Error.WriteLine("GameAssembly.dll or global-metadata.dat was not found under " + positional[1]);
             return 1;
         }
 
@@ -58,7 +66,7 @@ public static class Program
             OutputDir = output,
             UnityBaseLibsDir = unityLibs,
             GameAssemblyPath = gameAssembly,
-            PassthroughNames = true,
+            PassthroughNames = passthroughNames,
             Parallel = true,
         };
 
@@ -75,6 +83,7 @@ public static class Program
             metadataPath = metadata,
             managedDir = managed,
             unityLibsDir = unityLibs,
+            passthroughNames = passthroughNames,
             outputDir = output,
         };
         File.WriteAllText(

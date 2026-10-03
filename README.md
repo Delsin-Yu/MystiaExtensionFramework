@@ -11,7 +11,7 @@ Supported build: Unity 2021.3.28f1. `GameAssembly.dll` SHA256 `91CE5AE3DAD5DA07D
 Install the .NET 10 SDK. Reference the package `Mystia.Extension.Sdk`.
 
 ```xml
-<Project Sdk="Mystia.Extension.Sdk/1.0.0">
+<Project Sdk="Mystia.Extension.Sdk/2.0.0">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <MystiaInteropDir>C:\path\to\artifacts\interop\</MystiaInteropDir>

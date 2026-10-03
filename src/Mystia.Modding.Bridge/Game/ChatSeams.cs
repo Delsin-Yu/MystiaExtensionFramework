@@ -12,11 +12,11 @@ namespace Mystia.Modding.Bridge;
 /// <para>
 /// The menu is built by <c>DaySceneChatSelectionPannel.GetConfigurationSet</c>, which declares one local
 /// function per entry. The compiler keeps those local functions in the display class the method's own
-/// closure needs, and the il2cpp metadata names them by position:
-/// <c>Method_Internal_Void_SpecialNPCInteractData_byref_String_byref_Boolean_byref_Action_PDM_n</c>. Only
-/// the first two are pinned to a known entry — FreeChat is <c>_PDM_0</c> and Shop is <c>_PDM_1</c>, in that
-/// order in the source — while Mission/Invite/RequestIngredient/RequestBeverage/Commission are <c>_PDM_2</c>
-/// to <c>_PDM_6</c> with the order not confirmed, so they stay unhooked and report nothing.
+/// closure needs, and the interop generator names them by position:
+/// <c>Method_Internal_Void_SpecialNPCInteractData_byref_String_byref_Boolean_byref_Action_n</c>. Only
+/// the first two are pinned to a known entry — FreeChat is <c>_0</c> and Shop is <c>_1</c>, in that
+/// order in the source — while Mission/Invite/RequestIngredient/RequestBeverage/Commission are <c>_2</c>
+/// to <c>_6</c> with the order not confirmed, so they stay unhooked and report nothing.
 /// </para>
 /// <para>
 /// The interop keeps those methods public, so they are addressed by <c>typeof</c>/<c>nameof</c> and a changed
@@ -28,7 +28,7 @@ internal static class ChatOptionSeams
     [HarmonyPatch(
         typeof(DaySceneChatSelectionPannel.__c__DisplayClass17_0),
         nameof(DaySceneChatSelectionPannel.__c__DisplayClass17_0
-            .Method_Internal_Void_SpecialNPCInteractData_byref_String_byref_Boolean_byref_Action_PDM_0)
+            .Method_Internal_Void_SpecialNPCInteractData_byref_String_byref_Boolean_byref_Action_0)
     )]
     private static class FreeChat
     {
@@ -43,7 +43,7 @@ internal static class ChatOptionSeams
     [HarmonyPatch(
         typeof(DaySceneChatSelectionPannel.__c__DisplayClass17_0),
         nameof(DaySceneChatSelectionPannel.__c__DisplayClass17_0
-            .Method_Internal_Void_SpecialNPCInteractData_byref_String_byref_Boolean_byref_Action_PDM_1)
+            .Method_Internal_Void_SpecialNPCInteractData_byref_String_byref_Boolean_byref_Action_1)
     )]
     private static class Shop
     {

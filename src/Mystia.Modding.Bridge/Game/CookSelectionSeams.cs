@@ -9,7 +9,7 @@ namespace Mystia.Modding.Bridge;
 /// <summary>
 /// Cooking submission of the selection panel. The game only offers the submit callback of the output button
 /// as the <c>OnSubmit</c> local function of <c>WorkSceneCookingSelectionPannel.OnOutputSelected</c>, which the
-/// compiler turns into <c>__c__DisplayClass79_0.Method_Internal_Void_PDM_0</c>; the seam therefore binds the
+/// compiler turns into <c>__c__DisplayClass79_0.Method_Internal_Void_0</c>; the seam therefore binds the
 /// generated method by name and reads the submission out of the closure it belongs to: <c>solved</c> is the
 /// matched combo whose recipe is cooked, and <c>selectedIngredients</c> on the panel behind <c>__4__this</c>
 /// is what the player picked.
@@ -20,7 +20,7 @@ namespace Mystia.Modding.Bridge;
 /// </summary>
 internal static class CookSelectionSeams
 {
-    [HarmonyPatch(typeof(WorkSceneCookingSelectionPannel.__c__DisplayClass79_0), "Method_Internal_Void_PDM_0")]
+    [HarmonyPatch(typeof(WorkSceneCookingSelectionPannel.__c__DisplayClass79_0), "Method_Internal_Void_0")]
     private static class Submit
     {
         private static bool Prefix(WorkSceneCookingSelectionPannel.__c__DisplayClass79_0 __instance)

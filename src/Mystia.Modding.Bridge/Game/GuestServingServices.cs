@@ -1,7 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
 using GameData.Core.Collections;
+using GameData.Core.Collections.CharacterUtility;
 using GameData.Core.Collections.NightSceneUtility;
 using Il2CppInterop.Runtime;
+using Il2CppSystem.Linq;
 using NightScene.GuestManagementUtility;
 using NightScene.PartnerUtility;
 using NightScene.Tiles;
@@ -168,6 +170,35 @@ internal sealed class WorkSceneGuestServing : IWorkSceneGuests, IWorkSceneDishes
     {
         ServiceScope.Require();
         return EntitySeams.GuestOf(group) is { } native && GuestGroupController.CanQueue(native.GuestCount);
+    }
+
+    public OrderHandle CreateOrder(GuestHandle group, OrderKind kind, int foodRequest, int beverageRequest, int deskCode, bool hidden, bool free)
+    {
+        ServiceScope.Require();
+        if (EntitySeams.GuestOf(group) is not { } native)
+            return OrderHandle.None;
+
+        // The game's own two order kinds, built the way its own generation builds them
+        // (GuestsManager.GenerateOrderInternal): a normal order carries the group's first guest, a special
+        // order the special guest the group was spawned with.
+        if (kind == OrderKind.Normal)
+        {
+            GuestBase? first = null;
+            foreach (var guest in native.GetAllGuests().ToArray())
+            {
+                first = guest;
+                break;
+            }
+
+            return first is null
+                ? OrderHandle.None
+                : EntitySeams.OrderHandleOf(new GuestsManager.NormalOrder(first, foodRequest, beverageRequest, deskCode, hidden, free));
+        }
+
+        var specialId = GuestDirectory.ProxyOf(native)?.GuestIds.FirstOrDefault() ?? -1;
+        return specialId < 0
+            ? OrderHandle.None
+            : EntitySeams.OrderHandleOf(new GuestsManager.SpecialOrder(specialId.RefSGuest(), foodRequest, beverageRequest, deskCode, hidden, free));
     }
 
     public bool TryQueue(GuestHandle group, bool tryToJumpQueue = false)

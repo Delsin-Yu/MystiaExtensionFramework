@@ -117,6 +117,29 @@ public interface IWorkSceneGuests
     // Bridge implemented members; the default bodies throw until the bridge wiring lands, so an unwired
     // member fails loudly instead of silently doing nothing.
 
+    /// <summary>
+    /// Builds the order a replayed order session is to place, without placing it. A machine that places an
+    /// order another machine rolled builds its own order from what that machine rolled — the request ids, the
+    /// desk and the two flags — because the order object itself belongs to the machine that places it, and
+    /// only that machine can hand it to <see cref="BeginOrderSession(GuestHandle, OrderGenerationOutcome, OrderHandle, string)"/>.
+    /// The handle answers none when the group names no guest to build the order for.
+    /// </summary>
+    /// <param name="group">The group that is to place the order.</param>
+    /// <param name="kind">Whether the order is a normal guest's or a special guest's.</param>
+    /// <param name="foodRequest">The food the order asks for, as a recipe id.</param>
+    /// <param name="beverageRequest">The beverage the order asks for, as a beverage id.</param>
+    /// <param name="deskCode">The desk the order belongs to.</param>
+    /// <param name="hidden">Whether the game keeps the order out of its order list UI.</param>
+    /// <param name="free">Whether the order costs the guest nothing.</param>
+    OrderHandle CreateOrder(
+        GuestHandle group,
+        OrderKind kind,
+        int foodRequest,
+        int beverageRequest,
+        int deskCode,
+        bool hidden,
+        bool free) => throw new NotSupportedException();
+
     /// <summary>Whether a group of this size still fits into the waiting seats.</summary>
     bool CanQueue(GuestHandle group) => throw new NotSupportedException();
 

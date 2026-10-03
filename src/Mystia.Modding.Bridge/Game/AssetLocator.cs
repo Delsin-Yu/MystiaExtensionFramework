@@ -96,6 +96,17 @@ internal sealed class AssetLocator : IAssetLocator
         return true;
     }
 
+    /// <summary>
+    /// The GameObject template filed under <paramref name="key"/>. The template crosses this boundary because
+    /// the engine has to instantiate it; it never leaves the bridge, so it stays internal like the registration
+    /// that filed it.
+    /// </summary>
+    internal bool TryResolveGameObject(string key, [NotNullWhen(true)] out GameObject? gameObject)
+    {
+        gameObject = null;
+        return TryResolve(key, typeof(GameObject), out var asset) && (gameObject = asset as GameObject) is not null;
+    }
+
     public bool IsRegistered(string key)
     {
         if (string.IsNullOrWhiteSpace(key))

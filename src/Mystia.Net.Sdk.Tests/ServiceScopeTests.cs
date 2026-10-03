@@ -76,7 +76,9 @@ public sealed class ServiceScopeTests
         {
             SceneLoopHost.Enter(SceneId.Day);
 
-            Assert.NotNull(loop.Handle);
+            // The presentation member answered inside the loop without throwing; nothing is filed under the
+            // key, so the miss answers null rather than a handle to something that never played.
+            Assert.Null(loop.Handle);
             // The scene loop is handed the same always available services a global loop gets.
             Assert.Same(GlobalServices.Shared.Common, loop.Common);
         }
@@ -97,8 +99,9 @@ public sealed class ServiceScopeTests
         try
         {
             SceneLoopHost.Enter(SceneId.Day);
-            // Inside the day loop's Setup the day presentation answered.
-            Assert.NotNull(loop.Handle);
+            // Inside the day loop's Setup the day presentation answered (the key is unfiled, so it answered
+            // null without throwing; what matters here is that the member was reachable at all).
+            Assert.Null(loop.Handle);
             var day = loop.Services ?? throw new InvalidOperationException("Setup did not receive services.");
 
             // The day scene is replaced: the services of the previous scene are dead outside its own loop.

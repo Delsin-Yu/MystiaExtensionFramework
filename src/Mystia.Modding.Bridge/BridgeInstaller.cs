@@ -68,7 +68,9 @@ internal static class BridgeInstaller
     public static void Bind(ModRegistry? registry) => Registry = registry;
 }
 
-internal sealed class BridgeComponents : IIl2CppComponentHost
+// The bridge's own component host. It is not part of the public contract any more: a mod cannot register
+// IL2CPP types, so only the framework's own install path uses these two calls.
+internal sealed class BridgeComponents
 {
     private QueuedMainThread? _mainThread;
 

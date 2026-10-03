@@ -1,12 +1,26 @@
 ﻿using System.Text.Json;
 using Mystia.Modding.Bridge;
 using Mystia;
-using UnityEngine;
 
 namespace Mystia.Modding.Host;
 
 internal static class ModLoader
 {
+    /// <summary>
+    /// Assemblies a mod must not reference. The framework is the only injection pipeline, so a mod
+    /// that brings its own patcher either double-patches the game or bypasses the host's ordering.
+    /// The Roslyn analyzer (MYSTIA1001) rejects these at compile time; this list catches mods that
+    /// were built before the analyzer existed or outside the SDK.
+    /// </summary>
+    private static readonly string[] BannedAssemblyPrefixes =
+    [
+        "0Harmony",
+        "HarmonyLib",
+        "BepInEx",
+        "MonoPlus",
+        "MonoMod",
+    ];
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -14,7 +28,7 @@ internal static class ModLoader
         AllowTrailingCommas = true,
     };
 
-    public static ModRegistry Load(string modsDirectory, IModContext context, IReadOnlyList<string>? modOrder, Action<string>? warn = null)
+    public static ModRegistry Load(string modsDirectory, IMod host, IReadOnlyList<string>? modOrder, Action<string>? warn = null)
     {
         var registry = new ModRegistry();
         if (!Directory.Exists(modsDirectory))
@@ -36,6 +50,7 @@ internal static class ModLoader
         foreach (var manifest in ModOrder.Sort(manifests, modOrder))
         {
             var assembly = System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyPath(manifest.AssemblyPath);
+            WarnOnBannedReferences(assembly, manifest, warn);
             var entrance = assembly.GetCustomAttributes(typeof(ModEntranceAttribute), inherit: false)
                 .OfType<ModEntranceAttribute>()
                 .SingleOrDefault();
@@ -56,16 +71,56 @@ internal static class ModLoader
 
             var before = registry.Count;
             register.Invoke(null, [registry]);
-            var modContext = new ScopedContext(context, manifest.Directory, context.Log.Tag(manifest.Id), manifest.Id, manifest.Version);
+            var mod = new ScopedContext(host, manifest.Directory, manifest.Id, manifest.Version);
             foreach (var instance in registry.InstancesAddedSince(before))
             {
+                // The origin is bound first: everything the bridge later asks "which mod is this?" about,
+                // including the save handlers, resolves it here.
                 ContentOrigin.Bind(instance, manifest.Id);
-                if (instance is IPostInitialize post)
-                    post.PostInitialize(modContext);
+                if (instance is IInitialization initialization)
+                    initialization.Initialize(mod);
             }
         }
 
         return registry;
+    }
+
+    /// <summary>
+    /// Returns the names in <paramref name="references"/> that the ban list blocks, in the order the
+    /// assembly declared them. Used both by the load-time warning and by the tests.
+    /// </summary>
+    internal static IReadOnlyList<string> FindBannedReferences(IEnumerable<System.Reflection.AssemblyName> references)
+    {
+        var hits = new List<string>();
+        foreach (var reference in references)
+        {
+            var name = reference.Name;
+            if (string.IsNullOrEmpty(name))
+                continue;
+            foreach (var prefix in BannedAssemblyPrefixes)
+            {
+                if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                hits.Add(name);
+                break;
+            }
+        }
+
+        return hits;
+    }
+
+    /// <summary>
+    /// Warns about every banned assembly the mod references and keeps loading it: a mod that ships
+    /// its own patcher usually still works, it just fights the host, and the player has to see why.
+    /// </summary>
+    private static void WarnOnBannedReferences(System.Reflection.Assembly assembly, ModManifest manifest, Action<string>? warn)
+    {
+        foreach (var name in FindBannedReferences(assembly.GetReferencedAssemblies()))
+        {
+            warn?.Invoke(
+                $"Mod '{manifest.Id}' references the banned assembly '{name}'. " +
+                "The framework is the only injection pipeline, so this mod conflicts with the host.");
+        }
     }
 
     private static string ResolveAssembly(string directory, ModManifest manifest)
@@ -87,24 +142,18 @@ internal static class ModLoader
         return Path.GetFullPath(candidates[0]);
     }
 
-    private sealed class ScopedContext(IModContext inner, string modDirectory, ILog log, string modId, string modVersion)
-        : IModContext
+    private sealed class ScopedContext(IMod host, string modDirectory, string modId, string modVersion)
+        : IMod
     {
-        public ILog Log { get; } = new ModLog(log, modId, modVersion);
+        public string Id { get; } = modId;
 
-        public IMainThreadScheduler MainThread => inner.MainThread;
+        public string Version { get; } = modVersion;
 
-        public IGamePaths Paths { get; } = new ScopedPaths(inner.Paths.GameRoot, modDirectory);
+        public string Directory { get; } = modDirectory;
 
-        public IIl2CppComponentHost Components => inner.Components;
+        public ILog Log { get; } = new ModLog(host.Log, modId, modVersion);
 
-        public IModCache Cache { get; } = new ModStorage(Path.Combine(modDirectory, ".state"));
-
-        public IModConfigSource Config => (IModConfigSource)Cache;
-
-        public IPlatformInfo Platform => PlatformInfo.Shared;
-
-        public Sprite LoadSprite(string path) => SpriteFiles.Load(Paths.ModDirectory, path);
+        public IModStorage Storage { get; } = new ModStorage(modDirectory);
     }
 
     /// <summary>Adds the mod's own identity to any log it receives from the host.</summary>
@@ -129,13 +178,5 @@ internal static class ModLoader
         public void Log(LogLevel level, string message) => inner.Log(level, message);
 
         public ILog Tag(string tag) => new ModLog(inner.Tag(tag), Id, Version);
-    }
-
-    private sealed class ScopedPaths(string gameRoot, string modDirectory)
-        : IGamePaths
-    {
-        public string GameRoot { get; } = gameRoot;
-
-        public string ModDirectory { get; } = modDirectory;
     }
 }

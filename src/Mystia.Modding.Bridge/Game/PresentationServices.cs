@@ -99,7 +99,7 @@ internal sealed class PresentationServices : ICommonServices
     /// <summary>
     /// Effects and audio are still placeholders. Resolving an asset path works like <c>SpriteFiles</c> does it
     /// for sprites — an absolute path stands on its own and a relative one hangs off the mod's own directory —
-    /// but this service is shared by every mod and never sees the caller's <c>IModContext.Paths.ModDirectory</c>,
+    /// but this service is shared by every mod and never sees the caller's own mod directory,
     /// so the call is recorded once per path in the host log and nothing is instantiated.
     /// The API keeps its shape: the effect call still hands back a handle whose <c>Stop</c> is a no-op.
     /// </summary>

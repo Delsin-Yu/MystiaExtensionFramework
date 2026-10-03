@@ -46,12 +46,12 @@ Namespaces:
 
 | Namespace | What you implement or call |
 | --- | --- |
-| `Mystia` | `[AutoWire]`, `IModContext`, `IPostInitialize`, `ILog` |
+| `Mystia` | `[AutoWire]`, `IMod`, `IInitialization`, `ILog` |
 | `Mystia.Scenes` | `SceneId`, `ISceneListener`, scene loops and their services |
 | `Mystia.Listeners` | Day, prep, cook, work, and guest listeners, including `IGuestDirector` |
 | `Mystia.Data` | `IDatabaseExtension` and `Catalogs` |
 
-`IModContext.LoadSprite` loads a PNG from a path relative to the mod directory. `Catalogs.Core.FoodTags.Meat` and the other `Catalogs` members are the stock ids, with Chinese summaries on each constant.
+`IMod.Storage` reads and writes the mod own files: `TryOpenConfigRead`/`TryOpenConfigWrite` for the player editable config, and `TryOpenRead`/`TryOpenWrite`/`Exists`/`TryDelete` for the mod private cache. `IMod.Directory` is the mod folder.
 
 Scene loops implement `Setup`, `Update`, and `Shutdown`. The services argument is valid only inside those calls. `SceneId.Night` is the work scene (`IWorkSceneGameLoop`).
 

@@ -8,12 +8,28 @@ namespace Mystia.Modding.Bridge;
 // The framework itself uses Shared; per-mod instances come from the mod context.
 internal sealed class CoroutineScheduler : ICoroutineDispatcher
 {
-    internal static readonly CoroutineScheduler Shared = new();
+    private readonly bool _process;
+
+    private CoroutineScheduler(bool process) => _process = process;
+
+    // A scene scheduler follows the running scene session, so a routine started on its Owner dies with the
+    // scene. A global scheduler is pinned to the process host, so its routines outlive every scene.
+    public ICoroutineOwner Owner => _process ? CoroutinePump.ProcessHost : CoroutinePump.SceneHost;
+
+    // The scene dispatcher: its Owner is the running scene session's host while a scene runs, so a routine
+    // started on it dies with the scene, and the process host outside one.
+    internal static readonly CoroutineScheduler Scene = new(process: false);
+
+    // The framework wide instance every existing call site hands out; it is the scene dispatcher.
+    internal static readonly CoroutineScheduler Shared = Scene;
+
+    // The process dispatcher, for global loops that must survive every scene change.
+    internal static readonly CoroutineScheduler Global = new(process: true);
 
     public CoroutineHandle Start(Func<ICoroutineDispatcher, IEnumerator> routine) =>
         CoroutinePump.Start(this, routine);
 
-    public CoroutineHandle StartOn(Component owner, Func<ICoroutineDispatcher, IEnumerator> routine) =>
+    public CoroutineHandle StartOn(ICoroutineOwner owner, Func<ICoroutineDispatcher, IEnumerator> routine) =>
         CoroutinePump.StartOn(this, owner, routine);
 
     public void Stop(CoroutineHandle handle) => CoroutinePump.Stop(this, handle);
@@ -58,8 +74,7 @@ internal static class CoroutinePump
         internal int Id;
         internal CoroutineScheduler Scheduler = null!;
         internal Func<ICoroutineDispatcher, IEnumerator> Factory = null!;
-        internal Component? Target;
-        internal bool Bound;
+        internal ICoroutineOwner? Owner;
         internal readonly List<IEnumerator> Stack = new();
         internal bool Started;
         internal bool Removed;
@@ -68,6 +83,25 @@ internal static class CoroutinePump
         internal int ReadyFrame;
         internal int FixedTicks;
         internal Func<bool>? Condition;
+    }
+
+    // The process level host. It lives as long as the pump does: MainThreadPump.OnDestroy drains the pump,
+    // and that drain is what retires the owner and stops everything started on it.
+    private sealed class ProcessOwner : ICoroutineOwner
+    {
+        internal static readonly ProcessOwner Instance = new();
+
+        private bool _alive = true;
+
+        internal bool IsAlive => _alive;
+
+        internal void Retire() => _alive = false;
+    }
+
+    // One scene session's host. The pump hands out the running session and replaces the object when the game
+    // moves on, so reference identity is the whole rule: a routine started on a replaced owner is gone.
+    private sealed class SceneSessionOwner : ICoroutineOwner
+    {
     }
 
     // Adapter for game-side enumerators. They are driven through MoveNext/Current, never
@@ -91,30 +125,69 @@ internal static class CoroutinePump
     private static int _fixedTicks;
     private static bool _ticking;
 
+    // Scene sessions. The game loads one Unity scene per scene session (Splash, Main, Day, PrepNight, Night,
+    // Staff, Result) and replaces it when it moves on, so the set of loaded scenes is the session identity.
+    private static int[] _scenes = [];
+    private static SceneSessionOwner? _scene;
+    private static bool _derivedSessions = true;
+
     internal static void SetLogSink(Action<string> sink) => _sink = sink;
 
+    // The host the global dispatcher binds to: the pump itself, alive for the whole process.
+    internal static ICoroutineOwner ProcessHost => ProcessOwner.Instance;
+
+    // The host the scene dispatcher binds to: the running scene session, or the process host when no session
+    // runs (before the first scene, between scenes, and after LeaveScene).
+    internal static ICoroutineOwner SceneHost => (ICoroutineOwner?)_scene ?? ProcessOwner.Instance;
+
+    // Starts a new scene session, so the routines of the previous one stop on the next tick. A host that
+    // knows the session boundaries better than the loaded scene set does (the scene loop host) drives
+    // sessions with EnterScene/LeaveScene; the first such call turns the derivation below off.
+    internal static void EnterScene()
+    {
+        _derivedSessions = false;
+        _scene = new SceneSessionOwner();
+        Log("scene session started by the host");
+    }
+
+    // Ends the running session. The scene dispatcher falls back to the process host until the next session.
+    internal static void LeaveScene()
+    {
+        _derivedSessions = false;
+        _scene = null;
+        Log("scene session ended by the host");
+    }
+
     internal static CoroutineHandle Start(CoroutineScheduler scheduler, Func<ICoroutineDispatcher, IEnumerator> routine) =>
-        Launch(scheduler, routine, null, bound: false);
+        Launch(scheduler, routine, null);
 
-    internal static CoroutineHandle StartOn(CoroutineScheduler scheduler, Component owner, Func<ICoroutineDispatcher, IEnumerator> routine) =>
-        Launch(scheduler, routine, owner, bound: true);
+    internal static CoroutineHandle StartOn(CoroutineScheduler scheduler, ICoroutineOwner owner, Func<ICoroutineDispatcher, IEnumerator> routine)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        return Launch(scheduler, routine, owner);
+    }
 
-    private static CoroutineHandle Launch(CoroutineScheduler scheduler, Func<ICoroutineDispatcher, IEnumerator> routine, Component? target, bool bound)
+    private static CoroutineHandle Launch(CoroutineScheduler scheduler, Func<ICoroutineDispatcher, IEnumerator> routine, ICoroutineOwner? owner)
     {
         ArgumentNullException.ThrowIfNull(routine);
         GameBridgeHook.EnsurePump();
+        SyncSceneSession(); // a routine started before the first tick still binds to the running scene
         var state = new Routine
         {
             Id = ++_nextId,
             Scheduler = scheduler,
             Factory = routine,
-            Target = target,
-            Bound = bound,
+            Owner = owner,
         };
 
-        // An owner that is already gone never runs, matching StartOn's contract.
-        if (bound && !IsAlive(target))
+        // An owner that is already gone never runs, matching StartOn's contract. An owner the framework
+        // never handed out can never become alive either, so it is reported instead of passing silently.
+        if (owner is not null && !IsAlive(owner))
+        {
+            if (owner is not ProcessOwner and not SceneSessionOwner)
+                Log("routine started on an owner the framework did not hand out, it will not run");
             return new CoroutineHandle(state.Id);
+        }
 
         Active.Add(state);
         Run(state); // Unity runs a routine up to its first yield before Start returns.
@@ -124,6 +197,7 @@ internal static class CoroutinePump
 
     internal static void Tick(float delta)
     {
+        SyncSceneSession();
         _ticking = true;
         try
         {
@@ -133,7 +207,7 @@ internal static class CoroutinePump
                 var state = Active[i];
                 if (state.Removed)
                     continue;
-                if (state.Bound && !IsAlive(state.Target))
+                if (state.Owner is not null && !IsAlive(state.Owner))
                 {
                     state.Removed = true;
                     continue;
@@ -184,6 +258,7 @@ internal static class CoroutinePump
 
     internal static void Drain()
     {
+        ProcessOwner.Instance.Retire();
         if (_ticking)
         {
             foreach (var state in Active)
@@ -192,6 +267,90 @@ internal static class CoroutinePump
         }
 
         Active.Clear();
+    }
+
+    // The pump answers owner liveness itself. A process host lives until the pump is drained, a scene host
+    // until the pump moves to the next session, and an owner the pump did not hand out owns nothing, so a
+    // routine started on one never runs.
+    private static bool IsAlive(ICoroutineOwner? owner) => owner switch
+    {
+        ProcessOwner process => process.IsAlive,
+        SceneSessionOwner scene => ReferenceEquals(scene, _scene),
+        _ => false,
+    };
+
+    // Follows the loaded scene set to the running scene session. The rule is lenient in one direction and
+    // strict in the other: a scene added on top of the loaded ones (a loading overlay) keeps the session,
+    // because the scene the routines belong to is still there, while a scene that was replaced or unloaded
+    // ends it, because a destroyed scene must not keep its routines running.
+    private static void SyncSceneSession()
+    {
+        if (!_derivedSessions)
+            return;
+        if (!TryReadScenes(out var scenes))
+            return;
+        if (SameScenes(scenes, _scenes))
+            return;
+
+        var running = _scene;
+        var additive = running is not null && ContainsAll(scenes, _scenes);
+        _scenes = scenes;
+        if (additive)
+            return;
+        if (scenes.Length == 0)
+        {
+            _scene = null; // nothing is loaded, so the scene dispatcher falls back to the process host
+            return;
+        }
+
+        _scene = new SceneSessionOwner();
+        Log("scene host changed; the routines bound to the previous scene stopped");
+    }
+
+    private static bool TryReadScenes(out int[] handles)
+    {
+        handles = [];
+        try
+        {
+            var count = UnityEngine.SceneManagement.SceneManager.sceneCount;
+            if (count <= 0)
+                return true;
+            var scenes = new int[count];
+            for (var i = 0; i < count; i++)
+                scenes[i] = UnityEngine.SceneManagement.SceneManager.GetSceneAt(i).handle;
+            handles = scenes;
+            return true;
+        }
+        catch (Exception error)
+        {
+            // Deriving sessions is a convenience: when the scene API is unavailable the pump stops guessing
+            // instead of failing, and scene routines simply keep the process host as their owner.
+            _derivedSessions = false;
+            Log("scene session tracking disabled: " + error.GetBaseException().Message);
+            return false;
+        }
+    }
+
+    private static bool SameScenes(int[] left, int[] right)
+    {
+        if (left.Length != right.Length)
+            return false;
+        var a = (int[])left.Clone();
+        var b = (int[])right.Clone();
+        Array.Sort(a);
+        Array.Sort(b);
+        return a.AsSpan().SequenceEqual(b);
+    }
+
+    private static bool ContainsAll(int[] scenes, int[] previous)
+    {
+        foreach (var handle in previous)
+        {
+            if (Array.IndexOf(scenes, handle) < 0)
+                return false;
+        }
+
+        return true;
     }
 
     private static bool IsReady(Routine state, float delta)
@@ -381,9 +540,6 @@ internal static class CoroutinePump
         state.Kind = CoroutineAwait.WaitKind.FixedUpdate;
         state.FixedTicks = _fixedTicks;
     }
-
-    // UnityEngine.Object compares equal to null once the native object is destroyed.
-    private static bool IsAlive(Component? owner) => owner is not null && owner != null;
 
     private static void Sweep()
     {

@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Mystia.Net.Sdk\Mystia.Net.Sdk.csproj" />
     <ProjectReference Include="..\Mystia.Net.Sdk.SourceGenerators\Mystia.Net.Sdk.SourceGenerators.csproj" />
+    <ProjectReference Include="..\Mystia.Net.Sdk.Analyzers\Mystia.Net.Sdk.Analyzers.csproj" />
     <ProjectReference Include="..\Mystia.Modding.Bridge\Mystia.Modding.Bridge.csproj" />
     <ProjectReference Include="..\Mystia.Modding.Host\Mystia.Modding.Host.csproj" />
     <ProjectReference Include="..\Mystia.Syringe\Mystia.Syringe.csproj" />

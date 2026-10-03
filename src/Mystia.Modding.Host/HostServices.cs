@@ -1,6 +1,5 @@
-﻿using Mystia.Modding.Bridge;
+using Mystia.Modding.Bridge;
 using Mystia;
-using UnityEngine;
 
 namespace Mystia.Modding.Host;
 
@@ -60,39 +59,23 @@ internal sealed class TextLog(Action<string> write, string tag = "", string id =
     }
 }
 
-internal sealed class UnavailableComponents : IIl2CppComponentHost
+/// <summary>
+/// The host itself, in the role of a mod. It is not loaded from a mod folder, so it carries the host's own
+/// identity, the log every mod's log is tagged from, and the storage the host keeps for itself.
+/// </summary>
+internal sealed class HostContext(string modsDirectory, ILog log)
+    : IMod
 {
-    public void RegisterBehaviour(Type behaviourType) =>
-        throw new InvalidOperationException("IL2CPP component registration is available only inside an injected game.");
+    /// <summary>The id that names the host wherever a mod id is asked for.</summary>
+    internal const string HostId = "Mystia.Host";
 
-    public void CreatePersistent(string name, Type behaviourType) =>
-        throw new InvalidOperationException("IL2CPP component registration is available only inside an injected game.");
-}
+    public string Id { get; } = HostId;
 
-internal sealed class HostContext(string gameRoot, string modsDirectory, ILog log, IMainThreadScheduler mainThread, IIl2CppComponentHost components)
-    : IModContext
-{
+    public string Version { get; } = typeof(HostContext).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+
+    public string Directory { get; } = modsDirectory;
+
     public ILog Log { get; } = log;
 
-    public IMainThreadScheduler MainThread { get; } = mainThread;
-
-    public IGamePaths Paths { get; } = new HostPaths(gameRoot, modsDirectory);
-
-    public IIl2CppComponentHost Components { get; } = components;
-
-    public IModCache Cache { get; } = new ModStorage(Path.Combine(modsDirectory, "host-state"));
-
-    public IModConfigSource Config => (IModConfigSource)Cache;
-
-    public IPlatformInfo Platform => PlatformInfo.Shared;
-
-    public Sprite LoadSprite(string path) => SpriteFiles.Load(Paths.ModDirectory, path);
-
-    private sealed class HostPaths(string gameRoot, string modDirectory)
-        : IGamePaths
-    {
-        public string GameRoot { get; } = gameRoot;
-
-        public string ModDirectory { get; } = modDirectory;
-    }
+    public IModStorage Storage { get; } = new ModStorage(Path.Combine(modsDirectory, "host-state"));
 }

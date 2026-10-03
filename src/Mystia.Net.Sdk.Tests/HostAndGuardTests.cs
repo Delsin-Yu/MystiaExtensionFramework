@@ -120,12 +120,7 @@ public sealed class HostAndGuardTests
         CopySample(repo, "SampleMod.B", Path.Combine(mods, "sample.b"));
 
         var lines = new List<string>();
-        var context = new HostContext(
-            "game",
-            mods,
-            new TextLog(lines.Add),
-            new QueuedMainThread(),
-            new UnavailableComponents());
+        var context = new HostContext(mods, new TextLog(lines.Add));
         var registry = ModLoader.Load(mods, context, ["sample.b", "sample.a"], lines.Add);
         var listeners = registry.GetInstances<ISceneListener>();
 
@@ -319,14 +314,6 @@ public sealed class HostAndGuardTests
         {
             BridgeInstaller.Bind(null);
         }
-    }
-
-    [Fact]
-    public void LoadSpriteReportsAMissingFileBeforeTouchingUnity()
-    {
-        var context = new HostContext("game", Path.GetTempPath(), new TextLog(_ => { }), new QueuedMainThread(), new UnavailableComponents());
-        var missing = Assert.Throws<FileNotFoundException>(() => context.LoadSprite("missing-portrait.png"));
-        Assert.Contains("missing-portrait.png", missing.FileName);
     }
 
     private sealed class GateDayLoop : IDaySceneGameLoop

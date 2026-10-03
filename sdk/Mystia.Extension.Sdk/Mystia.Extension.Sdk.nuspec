@@ -15,6 +15,7 @@
     <file src="Sdk\Sdk.targets" target="Sdk" />
     <file src="$SdkDll$" target="lib\net10.0" />
     <file src="$GeneratorDll$" target="analyzers\dotnet\cs" />
+    <file src="$AnalyzerDll$" target="analyzers\dotnet\cs" />
     <file src="..\..\README.md" target="README.md" />
     <file src="..\..\LICENSE" target="LICENSE" />
   </files>

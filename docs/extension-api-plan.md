@@ -16,8 +16,7 @@ Design rules applied here:
 
 ```csharp
 ICoroutineDispatcher Coroutines { get; }
-IModCache Caching { get; }          // OpenRead / OpenWrite / OpenText / CreateText / Exists / Delete(relativePath)
-IModConfigSource Config { get; }    // read-only OpenRead / OpenText / Exists(relativePath)
+IModStorage Storage { get; }          // OpenRead / OpenWrite / OpenText / CreateText / Exists / Delete(relativePath)
 ILog Log { get; }
 IDialogCatalog Dialogs { get; }     // enumerate package names, resolve a name to a DialogPackage
 IGuestRecords Records { get; }      // RecordInvited / HasInvited / IsIgnored / Reset
@@ -51,7 +50,7 @@ public readonly struct CoroutineAwait { }    // opaque, used as a yield value
 public interface ICoroutineDispatcher
 {
     CoroutineHandle Start(Func<ICoroutineDispatcher, IEnumerator> routine);
-    CoroutineHandle StartOn(Component owner, Func<ICoroutineDispatcher, IEnumerator> routine);
+    CoroutineHandle StartOn(ICoroutineOwner owner, Func<ICoroutineDispatcher, IEnumerator> routine);
     void Stop(CoroutineHandle handle);
     void StopAll();
     CoroutineAwait NextFrame { get; }
@@ -146,7 +145,7 @@ Mapping tables `FoodsMapping`, `BeveragesMapping` and `RecipesMapping` record th
 
 Everything below the design sections is implemented, except where noted:
 
-- Host: `IGlobalGameLoop`/`IGlobalServices`, `IIMGUIProvider`/`IIMGUIDrawer`, coroutines with a managed pump and opaque handles, `IModCache`/`IModConfigSource`, `IDialogCatalog`, `IGuestRecords`, extended `ILog`, `IPlatformInfo` on `IModContext`.
+- Host: `IGlobalGameLoop`/`IGlobalServices`, `IIMGUIProvider`/`IIMGUIDrawer`, coroutines with a managed pump and opaque handles, `IModStorage`, `IDialogCatalog`, `IGuestRecords`, extended `ILog`, `IPlatformInfo` (not exposed yet; moves to `ICommonServices`).
 - Listeners: session, status, mission, day/work UI, metrics, QTE, schedule, chat option/menu, cook selection, post-evaluation, guest spawn requests, leave dispatch for `LeaveFromDesk`.
 - Services: economy (metrics edits + popularity tags), time (whole night seconds, timing gate), QTE, buffs, spell host, spawn marker refresh, reward replay.
 - Data: clothes, spells, buffs, mission/event nodes, day maps and the extension seams they need; merchants now carry a full runtime pipeline.

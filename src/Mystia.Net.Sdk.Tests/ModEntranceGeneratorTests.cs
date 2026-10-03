@@ -15,10 +15,10 @@ public sealed class ModEntranceGeneratorTests
             using Mystia.Scenes;
             namespace SampleMod
             {
-                public sealed class SceneLog : ISceneListener, IPostInitialize
+                public sealed class SceneLog : ISceneListener, IInitialization
                 {
                     public void OnSceneStart(SceneId scene) { }
-                    public void PostInitialize(IModContext context) { }
+                    public void Initialize(IMod mod) { }
                 }
             }
             """;
@@ -28,7 +28,7 @@ public sealed class ModEntranceGeneratorTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.Contains("new global::SampleMod.SceneLog()", generated);
         Assert.Contains("registrar.Add<global::Mystia.Scenes.ISceneListener>(instance0);", generated);
-        Assert.Contains("registrar.Add<global::Mystia.IPostInitialize>(instance0);", generated);
+        Assert.Contains("registrar.Add<global::Mystia.IInitialization>(instance0);", generated);
         Assert.Contains("ModEntranceAttribute(typeof(global::Mystia.Generated.ModEntrance))", generated);
     }
 

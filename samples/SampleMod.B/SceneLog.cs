@@ -3,11 +3,11 @@ using Mystia.Scenes;
 
 namespace SampleMod.B;
 
-public sealed class SceneLog : ISceneListener, IPostInitialize
+public sealed class SceneLog : ISceneListener, IInitialization
 {
     private ILog? _log;
 
-    public void PostInitialize(IModContext context) => _log = context.Log;
+    public void Initialize(IMod mod) => _log = mod.Log;
 
     public void OnSceneAwake(SceneId scene) => _log?.Info($"Sample B saw {scene}.");
 

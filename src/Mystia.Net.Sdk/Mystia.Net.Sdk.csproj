@@ -3,6 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Mystia</RootNamespace>
     <AssemblyName>Mystia.Net.Sdk</AssemblyName>
+    <Nullable>enable</Nullable>
     <Description>Public contract for Mystia community extensions.</Description>
   </PropertyGroup>
 

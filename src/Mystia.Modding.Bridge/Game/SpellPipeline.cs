@@ -277,7 +277,7 @@ public sealed class ManagedEnumerator : Il2CppSystem.Object
 /// <summary>
 /// Log handed to mod spell routines.
 /// <para>
-/// A mod gets its own <see cref="ILog"/> from <c>IModContext</c>, but a spell asset carries no back reference
+/// A mod gets its own <see cref="ILog"/> from <c>IMod</c>, but a spell asset carries no back reference
 /// to the mod that registered the implementation, so the routines log into the framework sink under the
 /// bridge identity instead of pretending to be the mod.
 /// </para>

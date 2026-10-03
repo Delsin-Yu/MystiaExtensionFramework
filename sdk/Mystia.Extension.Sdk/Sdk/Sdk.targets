@@ -5,6 +5,7 @@
       <Private>true</Private>
     </Reference>
     <Analyzer Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\Mystia.Net.Sdk.SourceGenerators.dll" />
+    <Analyzer Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\Mystia.Net.Sdk.Analyzers.dll" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(MystiaInteropDir)' != ''">

@@ -47,11 +47,11 @@ internal static class Entry
             var gameRoot = Path.GetDirectoryName(config.GameExe) ?? "";
             var mainThread = new Mystia.Modding.Bridge.QueuedMainThread();
             var components = new BridgeComponents();
-            var context = new HostContext(gameRoot, modsDirectory, new TextLog(Write), mainThread, components);
+            var host = new HostContext(modsDirectory, new TextLog(Write));
             Write("Installing the bridge.");
             BridgeInstaller.Install(mainThread, components, gameRoot);
             Write("Loading mods.");
-            var registry = ModLoader.Load(modsDirectory, context, config.ModOrder, Write);
+            var registry = ModLoader.Load(modsDirectory, host, config.ModOrder, Write);
             BridgeInstaller.Bind(registry);
             Write($"Loaded mods from '{modsDirectory}'.");
         }

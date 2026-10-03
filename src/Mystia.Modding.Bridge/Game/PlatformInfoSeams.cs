@@ -5,9 +5,9 @@ using Il2CppInterop.Runtime.InteropTypes.Arrays;
 namespace Mystia.Modding.Bridge;
 
 // IPlatformInfo is host state rather than a notification: the game's platform profile enumerates its DLC
-// keys once while the store front starts up, and the bridge stores them here for a mod to read through
-// IModContext.Platform. The class exposes Shared so the host contexts (HostContext/ScopedContext) can wire
-// the same instance as their Platform member.
+// keys once while the store front starts up, and the bridge stores them here. The class exposes Shared so the
+// host contexts can hand the same instance out; no public contract exposes it until the capability move puts
+// it on ICommonServices.
 internal sealed class PlatformInfo : IPlatformInfo
 {
     internal static readonly PlatformInfo Shared = new();

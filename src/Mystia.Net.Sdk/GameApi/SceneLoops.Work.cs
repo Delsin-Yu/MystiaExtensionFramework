@@ -92,8 +92,24 @@ public interface IWorkSceneGuests
     /// <summary>Spawns one group of normal guests; the return names the new group.</summary>
     GuestHandle SpawnNormal(IReadOnlyList<GuestDescription> guests, int desk = -1);
 
+    /// <summary>
+    /// Spawns one group of normal guests with the spawn request another machine rolled with — its spawn
+    /// position, its leave type, its desk and whether the group fades in. This is the overload a machine
+    /// replaying a spawn uses: the request is the one the rolling machine reported, not one of this machine's
+    /// own.
+    /// </summary>
+    /// <param name="guests">The guests of the group, in the group's own order.</param>
+    /// <param name="request">The spawn request to replay.</param>
+    GuestHandle SpawnNormal(IReadOnlyList<GuestDescription> guests, GuestSpawnRequest request) =>
+        throw new NotSupportedException();
+
     /// <summary>Spawns one special guest by id; the return names the new group.</summary>
     GuestHandle SpawnSpecial(int guestId, int desk = -1);
+
+    /// <summary>Spawns one special guest by id with the spawn request another machine rolled with.</summary>
+    /// <param name="guestId">The id of the special guest.</param>
+    /// <param name="request">The spawn request to replay.</param>
+    GuestHandle SpawnSpecial(int guestId, GuestSpawnRequest request) => throw new NotSupportedException();
 
     bool Seat(GuestHandle group, int desk, bool firstSpawn = true, int seat = -1);
 

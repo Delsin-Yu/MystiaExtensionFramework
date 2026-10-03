@@ -91,6 +91,48 @@ internal sealed class WorkSceneGuestServing : IWorkSceneGuests, IWorkSceneDishes
         return EntitySeams.GuestHandleOf(group);
     }
 
+    public GuestHandle SpawnNormal(IReadOnlyList<GuestDescription> guests, GuestSpawnRequest request)
+    {
+        ServiceScope.Require();
+        var resolved = GuestSpawnPipeline.Resolve(guests);
+        var native = new Il2CppSystem.Collections.Generic.List<NormalGuest>(resolved.Count);
+        foreach (var guest in resolved)
+            native.Add(guest);
+        var enumerable = (Il2CppSystem.Collections.Generic.IEnumerable<NormalGuest>)(object)native;
+        var group = GuestsManager.instance.SpawnNormalGuestGroup(
+            enumerable,
+            Position(request.SpawnPosition),
+            Mirrors.ToGame(request.LeaveType),
+            request.DeskCode,
+            request.Fade);
+        return EntitySeams.GuestHandleOf(group);
+    }
+
+    public GuestHandle SpawnSpecial(int guestId, GuestSpawnRequest request)
+    {
+        ServiceScope.Require();
+        var group = GuestsManager.instance.SpawnSpecialGuestGroup(
+            guestId,
+            SpecialGuestsController.GuestSpawnType.Normal,
+            Position(request.SpawnPosition),
+            null,
+            Mirrors.ToGame(request.LeaveType),
+            true,
+            request.DeskCode,
+            false,
+            // The game's own character post-processing is what its own spawn path hands the controller (the mod
+            // that replayed this spawn used the same callback).
+            GuestsManager.instance.getPostprocessCharacterCallback.Invoke(),
+            request.Fade);
+        return EntitySeams.GuestHandleOf(group);
+    }
+
+    /// <summary>The mirrored spawn position as the game's own nullable vector.</summary>
+    private static Il2CppSystem.Nullable<UnityEngine.Vector3> Position(Mystia.Numerics.Vector3? position) =>
+        position is { } value
+            ? new Il2CppSystem.Nullable<UnityEngine.Vector3>(new UnityEngine.Vector3(value.X, value.Y, value.Z))
+            : new Il2CppSystem.Nullable<UnityEngine.Vector3>();
+
     public bool Seat(GuestHandle group, int desk, bool firstSpawn = true, int seat = -1)
     {
         ServiceScope.Require();

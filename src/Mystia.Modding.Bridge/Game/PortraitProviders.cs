@@ -1,3 +1,4 @@
+using Common.UI.NoteBookUtility;
 using GameData.Core.Collections.CharacterUtility;
 using GameData.Profile;
 using GameData.RunTime.Common;
@@ -48,10 +49,10 @@ internal static class PortraitProviders
     }
 
     /// <summary>
-    /// First provider that answers for the garment wins; failures never disturb the pipeline. A provider answers
-    /// in handles, so the sprite the panel draws is the one this framework built or wrapped.
+    /// First provider that answers for the garment on that panel wins; failures never disturb the pipeline. A
+    /// provider answers in handles, so the sprite the panel draws is the one this framework built or wrapped.
     /// </summary>
-    internal static Sprite? Resolve(int clothIndex)
+    internal static Sprite? Resolve(int clothIndex, PortraitTarget target)
     {
         if (clothIndex < 0)
             return null;
@@ -59,7 +60,7 @@ internal static class PortraitProviders
         {
             try
             {
-                if (!provider.TryResolvePortrait(clothIndex, out var portrait))
+                if (!provider.TryResolvePortrait(clothIndex, target, out var portrait))
                     continue;
                 if (portrait is not UnitySpriteHandle { Sprite: not null } resolved)
                 {
@@ -77,6 +78,14 @@ internal static class PortraitProviders
 
         return null;
     }
+
+    /// <summary>
+    /// Which panel is setting the portrait up. The one method every panel draws through is handed the panel as
+    /// its coroutine runner, so the notebook is recognised by that component and everything else is the HUD case
+    /// the game hands the player's portrait to alike.
+    /// </summary>
+    internal static PortraitTarget TargetOf(MonoBehaviour? coroutineRunner) =>
+        coroutineRunner is NoteBookProfilePannel ? PortraitTarget.NoteBook : PortraitTarget.Hud;
 }
 
 // Named apart from PortraitSprites' PortraitSeams (the four CharacterPortrayal load seams).
@@ -96,11 +105,13 @@ internal static class PortraitProviderSeams
         // Prefix, never skipping: the original call sets the stock sprite, starts (or restarts) the
         // animated portrait coroutine and reports whether any visual exists, and overrideSprite keeps
         // winning over the frames that coroutine writes into Image.sprite.
-        private static void Prefix(Image imageComponent)
+        private static void Prefix(Image imageComponent, MonoBehaviour coroutineRunner)
         {
             if (imageComponent is null)
                 return;
-            var sprite = PortraitProviders.Resolve(PortraitProviders.CurrentClothIndex());
+            var sprite = PortraitProviders.Resolve(
+                PortraitProviders.CurrentClothIndex(),
+                PortraitProviders.TargetOf(coroutineRunner));
             if (sprite is not null)
                 imageComponent.overrideSprite = sprite;
         }

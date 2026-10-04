@@ -229,6 +229,22 @@ public interface IGuestGroupListener
 }
 
 /// <summary>
+/// Which of the game's panels is setting the player's portrait up, as far as the game tells them apart.
+/// </summary>
+public enum PortraitTarget
+{
+    /// <summary>
+    /// The HUD of the running scene, and every other panel that draws the player's portrait the same way — the
+    /// minigame panels that show the player, for instance. They are one case because the game hands the player's
+    /// portrait to all of them alike and a mod that answers for one answers for all.
+    /// </summary>
+    Hud,
+
+    /// <summary>The notebook's own profile page: the one page that keeps its own picture next to the portrait.</summary>
+    NoteBook,
+}
+
+/// <summary>
 /// The portrait a mod draws for a garment the game has loaded. The chain is asked before the game's own clothes
 /// visual is set up, and what a provider answers is drawn instead; answering false leaves the garment to the
 /// game's own visuals, which keep running either way.
@@ -237,14 +253,16 @@ public interface IGuestGroupListener
 public interface IPortraitProvider
 {
     /// <summary>
-    /// The portrait to draw for the garment at <paramref name="clothIndex"/>, or false to leave that garment to
-    /// the game. The index is the garment's own - the one the injected declaration carries, which is also the
-    /// one the game's loaded clothes report - so a provider recognises its own garments without seeing them.
+    /// The portrait to draw for the garment at <paramref name="clothIndex"/> on <paramref name="target"/>, or
+    /// false to leave that garment and that panel to the game. The index is the garment's own - the one the
+    /// injected declaration carries, which is also the one the game's loaded clothes report - so a provider
+    /// recognises its own garments without seeing them.
     /// </summary>
     /// <param name="clothIndex">The index of the garment the player is wearing.</param>
+    /// <param name="target">The panel the portrait is being set up on.</param>
     /// <param name="portrait">The portrait, built by <c>IAssetFactory</c> or wrapped from the game's own art
     /// with <c>IAssetFactory.TryWrapSprite</c>, or null when the provider answers for no garment.</param>
-    bool TryResolvePortrait(int clothIndex, [NotNullWhen(true)] out SpriteHandle? portrait);
+    bool TryResolvePortrait(int clothIndex, PortraitTarget target, [NotNullWhen(true)] out SpriteHandle? portrait);
 }
 
 [AutoWire]

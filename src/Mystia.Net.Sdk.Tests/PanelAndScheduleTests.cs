@@ -11,6 +11,7 @@ using Mystia.Listeners;
 using Mystia.Modding.Bridge;
 using Mystia.Scenes;
 using NightScene.GuestManagementUtility;
+using UnityEngine;
 using Xunit;
 
 namespace Mystia.Tests;
@@ -317,6 +318,12 @@ public sealed class PanelAndScheduleTests : IDisposable
 
         Assert.Equal(typeof(DataBaseCharacter), patch.info.declaringType);
         Assert.Equal(nameof(DataBaseCharacter.SetupPortrayalVisual), patch.info.methodName);
+
+        // The panel that asks travels with the call (the method takes it as its coroutine runner), and the seam
+        // reads it to tell the note book apart: the prefix must therefore ask for it.
+        var prefix = container.GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("The portrait provider seam has no prefix.");
+        Assert.Contains(prefix.GetParameters(), parameter => parameter.ParameterType == typeof(MonoBehaviour));
     }
 
     // ---- helpers --------------------------------------------------------------------------------------

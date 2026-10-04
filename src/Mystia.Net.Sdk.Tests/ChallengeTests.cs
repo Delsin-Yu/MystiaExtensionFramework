@@ -663,7 +663,7 @@ public sealed class ChallengeTests : IDisposable
 
         var result = ChallengeEvaluationResult.Normal;
         var comboProtect = false;
-        var evaluation = Timeline.InterceptBossEvaluation(11, ChallengePhase.Three, ref result, ref comboProtect, out var cancel);
+        var evaluation = Timeline.InterceptBossEvaluation(11, ChallengePhase.Three, ref result, ref comboProtect, string.Empty, 1f, out var cancel);
 
         Assert.False(cancel);
         // Every listener is asked, each of them is handed what the previous one left behind, and what the last
@@ -689,14 +689,14 @@ public sealed class ChallengeTests : IDisposable
 
         var result = ChallengeEvaluationResult.Good;
         var comboProtect = false;
-        var evaluation = Timeline.InterceptBossEvaluation(3, ChallengePhase.Three, ref result, ref comboProtect, out var cancel);
+        var evaluation = Timeline.InterceptBossEvaluation(3, ChallengePhase.Three, ref result, ref comboProtect, string.Empty, 1f, out var cancel);
 
         Assert.True(cancel);
         // The values the listeners left behind are what the game goes on with in place of the callback.
         Assert.Equal(ChallengeEvaluationResult.Good, evaluation.Result);
 
         // The callback did not run, so the notification that reports it as run is not delivered.
-        Timeline.BossEvaluated(evaluation, evaluation.Result, evaluation.ComboProtect, ran: false);
+        Timeline.BossEvaluated(evaluation, evaluation.Result, evaluation.ComboProtect, string.Empty, 1f, ran: false);
         Assert.Equal(new[] { "only:pre-eval:Good:False" }, recorder.Events);
     }
 
@@ -712,7 +712,7 @@ public sealed class ChallengeTests : IDisposable
 
         var result = ChallengeEvaluationResult.Bad;
         var comboProtect = false;
-        Timeline.InterceptBossEvaluation(9, ChallengePhase.Three, ref result, ref comboProtect, out var cancel);
+        Timeline.InterceptBossEvaluation(9, ChallengePhase.Three, ref result, ref comboProtect, string.Empty, 1f, out var cancel);
 
         Assert.True(cancel);
         // The cancel of the first listener does not hide the event from the listeners after it, and both of them
@@ -734,12 +734,12 @@ public sealed class ChallengeTests : IDisposable
 
         var result = ChallengeEvaluationResult.Normal;
         var comboProtect = false;
-        var evaluation = Timeline.InterceptBossEvaluation(5, ChallengePhase.Three, ref result, ref comboProtect, out var cancel);
+        var evaluation = Timeline.InterceptBossEvaluation(5, ChallengePhase.Three, ref result, ref comboProtect, string.Empty, 1f, out var cancel);
         Assert.False(cancel);
 
         // The listeners left Normal behind, and the game's own callback scored the group ExGood and protected
         // the combo: the report is about what the callback did, not about what it was handed.
-        Timeline.BossEvaluated(evaluation, ChallengeEvaluationResult.ExGood, true, ran: true);
+        Timeline.BossEvaluated(evaluation, ChallengeEvaluationResult.ExGood, true, string.Empty, 1f, ran: true);
 
         Assert.Equal(new[] { "only:pre-eval:Normal:False", "only:eval:ExGood:True" }, recorder.Events);
     }
@@ -754,7 +754,7 @@ public sealed class ChallengeTests : IDisposable
         // asked and the values the game handed over are not touched.
         var result = ChallengeEvaluationResult.Good;
         var comboProtect = true;
-        var evaluation = Timeline.InterceptBossEvaluation(7, ChallengePhase.Three, ref result, ref comboProtect, out var cancel);
+        var evaluation = Timeline.InterceptBossEvaluation(7, ChallengePhase.Three, ref result, ref comboProtect, string.Empty, 1f, out var cancel);
 
         Assert.False(cancel);
         Assert.Empty(recorder.Events);
@@ -763,13 +763,13 @@ public sealed class ChallengeTests : IDisposable
         Assert.True(evaluation == default);
 
         // A report is dropped for the same reason: no run was behind the callback.
-        Timeline.BossEvaluated(evaluation, result, comboProtect, ran: true);
+        Timeline.BossEvaluated(evaluation, result, comboProtect, string.Empty, 1f, ran: true);
         Assert.Empty(recorder.Events);
 
         // The same holds once the run ended, even though its handles still answer.
         StartRun();
         Timeline.EndRun();
-        Assert.True(Timeline.InterceptBossEvaluation(7, ChallengePhase.Three, ref result, ref comboProtect, out cancel) == default);
+        Assert.True(Timeline.InterceptBossEvaluation(7, ChallengePhase.Three, ref result, ref comboProtect, string.Empty, 1f, out cancel) == default);
         Assert.False(cancel);
         Assert.Empty(recorder.Events);
     }
@@ -781,9 +781,9 @@ public sealed class ChallengeTests : IDisposable
         var result = ChallengeEvaluationResult.Normal;
         var comboProtect = false;
 
-        var boss = Timeline.InterceptBossEvaluation(21, ChallengePhase.Three, ref result, ref comboProtect, out _);
-        var again = Timeline.InterceptBossEvaluation(21, ChallengePhase.Three, ref result, ref comboProtect, out _);
-        var stand = Timeline.InterceptBossEvaluation(22, ChallengePhase.Three, ref result, ref comboProtect, out _);
+        var boss = Timeline.InterceptBossEvaluation(21, ChallengePhase.Three, ref result, ref comboProtect, string.Empty, 1f, out _);
+        var again = Timeline.InterceptBossEvaluation(21, ChallengePhase.Three, ref result, ref comboProtect, string.Empty, 1f, out _);
+        var stand = Timeline.InterceptBossEvaluation(22, ChallengePhase.Three, ref result, ref comboProtect, string.Empty, 1f, out _);
 
         // One group is one handle, however often it is evaluated; another group is another handle.
         Assert.True(boss.Group != default);
@@ -795,13 +795,13 @@ public sealed class ChallengeTests : IDisposable
         Assert.Equal(Timeline.Boss, boss.Group);
 
         // A callback the game handed no group to names no group.
-        var nothing = Timeline.InterceptBossEvaluation(0, ChallengePhase.Three, ref result, ref comboProtect, out _);
+        var nothing = Timeline.InterceptBossEvaluation(0, ChallengePhase.Three, ref result, ref comboProtect, string.Empty, 1f, out _);
         Assert.True(nothing.Group == default);
 
         // The next run drops every handle of the finished one, so a handle never means two groups.
         Timeline.Reset();
         StartRun();
-        var later = Timeline.InterceptBossEvaluation(21, ChallengePhase.Three, ref result, ref comboProtect, out _);
+        var later = Timeline.InterceptBossEvaluation(21, ChallengePhase.Three, ref result, ref comboProtect, string.Empty, 1f, out _);
         Assert.True(later.Group != boss.Group);
         Assert.True(later.Group != stand.Group);
     }

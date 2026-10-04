@@ -220,8 +220,9 @@ namespace Mystia.Scenes
     /// <para>
     /// <see cref="Result"/> and <see cref="ComboProtect"/> are the callback's own inputs, and a mod may rewrite
     /// them from <see cref="IChallengeListener.OnPreBossEvaluated"/>: what it leaves behind is what the
-    /// callback receives. <see cref="Group"/>, <see cref="Phase"/> and <see cref="Kind"/> describe the
-    /// evaluation and are never read back.
+    /// callback receives. <see cref="Message"/> and <see cref="DamageMultiplier"/> are rewritten the same way -
+    /// the line the callback writes and the multiplier the story attempt keeps beside it. <see cref="Group"/>,
+    /// <see cref="Phase"/> and <see cref="Kind"/> describe the evaluation and are never read back.
     /// </para>
     /// </summary>
     /// <param name="Group">
@@ -238,7 +239,24 @@ namespace Mystia.Scenes
         ChallengePhase Phase,
         ChallengeRunKind Kind,
         ChallengeEvaluationResult Result,
-        bool ComboProtect);
+        bool ComboProtect)
+    {
+        /// <summary>
+        /// The line the callback writes next to its verdict, as a mod may rewrite it. A cancelled callback (see
+        /// <see cref="IChallengeListener.OnPreBossEvaluated"/>) is left with exactly this line, which is how a
+        /// peer replays the line the ruling machine's callback produced; the report a callback that ran comes
+        /// with carries the line it ended at.
+        /// </summary>
+        public string Message { get; init; } = string.Empty;
+
+        /// <summary>
+        /// The damage multiplier the challenge's own story attempt keeps beside its evaluation callback, as the
+        /// callback's own input and a mod may rewrite it. It only exists for the story attempt: the retake's
+        /// callbacks and the stands it spawns carry no multiplier, so the field stays at one there and writing
+        /// it has no effect.
+        /// </summary>
+        public float DamageMultiplier { get; init; } = 1f;
+    }
 
     /// <summary>
     /// The challenge of the running work scene: which phase runs, the time left on its clock, and the two

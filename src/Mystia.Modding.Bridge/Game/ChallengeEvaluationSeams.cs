@@ -76,6 +76,8 @@ internal static class ChallengeEvaluationSeams
         nint group,
         ref GuestGroupController.EvaluationResult lastResult,
         ref bool oldComboProtect,
+        string message,
+        float damageMultiplier,
         out ChallengeBossEvaluation evaluation)
     {
         // No run the framework owns is behind this callback - another challenge's, or the game's own outside a
@@ -88,7 +90,8 @@ internal static class ChallengeEvaluationSeams
         }
 
         var result = ToSdk(lastResult);
-        evaluation = timeline.InterceptBossEvaluation(group, ChallengePhase.Three, ref result, ref oldComboProtect, out var cancel);
+        evaluation = timeline.InterceptBossEvaluation(
+            group, ChallengePhase.Three, ref result, ref oldComboProtect, message, damageMultiplier, out var cancel);
         if (cancel)
             return false;
 
@@ -123,6 +126,7 @@ internal static class ChallengeStoryEvaluationSeam
         private static void Prepare() => _ = Located;
 
         private static bool Prefix(
+            StoryContext __instance,
             ref GuestGroupController.EvaluationResult lastResult,
             GuestGroupController __,
             ref bool oldComboProtect,
@@ -132,31 +136,44 @@ internal static class ChallengeStoryEvaluationSeam
             out ChallengeBossEvaluation __state)
         {
             // The game's own callback writes both of these itself; they only stand as written here when the
-            // callback is cancelled below and the game is left with nothing else to use.
+            // callback is cancelled below and the game is left with nothing else to use. The multiplier is the
+            // story attempt's own field, and a cancelled callback is left with the one the listeners wrote.
             message = string.Empty;
             comboProtect = false;
 
             // The game names this argument `__` in its own source: the story attempt's callback ignores which
             // group it was handed, but EvaluateOrder still passes the group it is evaluating.
-            var run = ChallengeEvaluationSeams.Intercept(ChallengeEvaluationSeams.Pointer(__), ref lastResult, ref oldComboProtect, out __state);
+            var run = ChallengeEvaluationSeams.Intercept(
+                ChallengeEvaluationSeams.Pointer(__),
+                ref lastResult,
+                ref oldComboProtect,
+                message,
+                __instance.dmgMultiplier,
+                out __state);
             if (run)
                 return true;
 
             __result = ChallengeEvaluationSeams.ToGame(__state.Result);
             comboProtect = __state.ComboProtect;
+            message = __state.Message;
+            __instance.dmgMultiplier = __state.DamageMultiplier;
             return false;
         }
 
         [HarmonyPostfix]
         private static void Postfix(
+            StoryContext __instance,
             ChallengeBossEvaluation __state,
             GuestGroupController.EvaluationResult __result,
             bool comboProtect,
+            string message,
             bool __runOriginal) =>
             ChallengeTimeline.Shared.BossEvaluated(
                 __state,
                 ChallengeEvaluationSeams.ToSdk(__result),
                 comboProtect,
+                message,
+                __instance.dmgMultiplier,
                 __runOriginal);
     }
 }
@@ -195,12 +212,21 @@ internal static class ChallengeRetakeEvaluationSeam
             message = string.Empty;
             comboProtect = false;
 
-            var run = ChallengeEvaluationSeams.Intercept(ChallengeEvaluationSeams.Pointer(thisGuestGroup), ref lastResult, ref oldComboProtect, out __state);
+            // Only the story attempt keeps a damage multiplier beside its callback, so the retake's line is the
+            // one the listeners write and the field stays at its default.
+            var run = ChallengeEvaluationSeams.Intercept(
+                ChallengeEvaluationSeams.Pointer(thisGuestGroup),
+                ref lastResult,
+                ref oldComboProtect,
+                message,
+                1f,
+                out __state);
             if (run)
                 return true;
 
             __result = ChallengeEvaluationSeams.ToGame(__state.Result);
             comboProtect = __state.ComboProtect;
+            message = __state.Message;
             return false;
         }
 
@@ -209,11 +235,14 @@ internal static class ChallengeRetakeEvaluationSeam
             ChallengeBossEvaluation __state,
             GuestGroupController.EvaluationResult __result,
             bool comboProtect,
+            string message,
             bool __runOriginal) =>
             ChallengeTimeline.Shared.BossEvaluated(
                 __state,
                 ChallengeEvaluationSeams.ToSdk(__result),
                 comboProtect,
+                message,
+                1f,
                 __runOriginal);
     }
 }
@@ -252,14 +281,22 @@ internal static class ChallengeStandEvaluationSeam
             message = string.Empty;
             comboProtect = false;
 
-            var run = ChallengeEvaluationSeams.Intercept(ChallengeEvaluationSeams.Pointer(thisGuestGroup), ref lastResult, ref oldComboProtect, out __state);
+            // Like the retake's, a stand's callback carries no damage multiplier.
+            var run = ChallengeEvaluationSeams.Intercept(
+                ChallengeEvaluationSeams.Pointer(thisGuestGroup),
+                ref lastResult,
+                ref oldComboProtect,
+                message,
+                1f,
+                out __state);
             if (run)
                 return true;
 
             // The stand's own callback hands the result it was given straight back, so the listeners' verdict is
-            // already the one to return; the flag is the one they left behind.
+            // already the one to return; the flag and the line are the ones they left behind.
             __result = ChallengeEvaluationSeams.ToGame(__state.Result);
             comboProtect = __state.ComboProtect;
+            message = __state.Message;
             return false;
         }
 
@@ -268,11 +305,14 @@ internal static class ChallengeStandEvaluationSeam
             ChallengeBossEvaluation __state,
             GuestGroupController.EvaluationResult __result,
             bool comboProtect,
+            string message,
             bool __runOriginal) =>
             ChallengeTimeline.Shared.BossEvaluated(
                 __state,
                 ChallengeEvaluationSeams.ToSdk(__result),
                 comboProtect,
+                message,
+                1f,
                 __runOriginal);
     }
 }

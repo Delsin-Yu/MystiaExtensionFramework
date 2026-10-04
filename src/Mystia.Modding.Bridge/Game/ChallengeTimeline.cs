@@ -574,13 +574,21 @@ internal sealed class ChallengeTimeline
         ChallengePhase phase,
         ref ChallengeEvaluationResult result,
         ref bool comboProtect,
+        string message,
+        float damageMultiplier,
         out bool cancel)
     {
         cancel = false;
         if (!_running)
             return default;
 
-        var evaluation = new ChallengeBossEvaluation(HandleFor(group), phase, _kind, result, comboProtect);
+        var evaluation = new ChallengeBossEvaluation(HandleFor(group), phase, _kind, result, comboProtect)
+        {
+            // The callback's own line and the story attempt's multiplier are its inputs on the way in only
+            // when whoever calls this already knows them - a replay writes the ruling machine's values here.
+            Message = message,
+            DamageMultiplier = damageMultiplier,
+        };
         foreach (var listener in Dispatch.Instances<IChallengeListener>())
             listener.OnPreBossEvaluated(ref evaluation, ref cancel);
 
@@ -599,11 +607,19 @@ internal sealed class ChallengeTimeline
         in ChallengeBossEvaluation evaluation,
         ChallengeEvaluationResult result,
         bool comboProtect,
+        string message,
+        float damageMultiplier,
         bool ran)
     {
         if (!_running || !ran)
             return;
-        var final = evaluation with { Result = result, ComboProtect = comboProtect };
+        var final = evaluation with
+        {
+            Result = result,
+            ComboProtect = comboProtect,
+            Message = message,
+            DamageMultiplier = damageMultiplier,
+        };
         Dispatch.Run<IChallengeListener>(listener => listener.OnBossEvaluated(final));
     }
 

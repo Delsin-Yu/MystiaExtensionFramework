@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 using Common.CharacterUtility;
 using Common.TimelineExtestion;
 using Common.UI;
@@ -12,6 +14,7 @@ using NightScene.UI.CookingUtility;
 using UnityEngine;
 
 using Mystia;
+using Mystia.Assets;
 using Mystia.Scenes;
 
 using NumericsVector3 = Mystia.Numerics.Vector3;
@@ -225,10 +228,23 @@ public interface IGuestGroupListener
     void OnIzakayaClosing() { }
 }
 
+/// <summary>
+/// The portrait a mod draws for a garment the game has loaded. The chain is asked before the game's own clothes
+/// visual is set up, and what a provider answers is drawn instead; answering false leaves the garment to the
+/// game's own visuals, which keep running either way.
+/// </summary>
 [AutoWire]
 public interface IPortraitProvider
 {
-    bool TryResolvePortrait(ClothesProfile.Clothes clothes, out Sprite sprite);
+    /// <summary>
+    /// The portrait to draw for the garment at <paramref name="clothIndex"/>, or false to leave that garment to
+    /// the game. The index is the garment's own - the one the injected declaration carries, which is also the
+    /// one the game's loaded clothes report - so a provider recognises its own garments without seeing them.
+    /// </summary>
+    /// <param name="clothIndex">The index of the garment the player is wearing.</param>
+    /// <param name="portrait">The portrait, built by <c>IAssetFactory</c> or wrapped from the game's own art
+    /// with <c>IAssetFactory.TryWrapSprite</c>, or null when the provider answers for no garment.</param>
+    bool TryResolvePortrait(int clothIndex, [NotNullWhen(true)] out SpriteHandle? portrait);
 }
 
 [AutoWire]

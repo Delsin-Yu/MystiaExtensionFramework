@@ -152,6 +152,26 @@ internal sealed class UnityAssetFactory : IAssetFactory
         [NotNullWhen(true)] out CharacterSpriteSetHandle? set) =>
         CharacterSprites.TryCreate(kind, frames, style, out set);
 
+    /// <summary>
+    /// Wraps a sprite the game holds. The object travels as <see cref="object"/> because the surface names no
+    /// engine type, so this is where "is what the game handed the mod actually a sprite" is answered.
+    /// </summary>
+    public bool TryWrapSprite(object sprite, [NotNullWhen(true)] out SpriteHandle? handle)
+    {
+        handle = null;
+        if (sprite is not Sprite engine || engine is null)
+            return false;
+
+        handle = new UnitySpriteHandle(engine);
+        return true;
+    }
+
+    public bool TryUnwrapCharacterSpriteSet(
+        object set,
+        out CharacterSpriteSetFrames frames,
+        out CharacterSpriteSetStyle style) =>
+        CharacterSprites.TryUnwrap(set, out frames, out style);
+
     public bool TryCreateAudioClip(
         string name,
         ReadOnlySpan<float> interleavedSamples,

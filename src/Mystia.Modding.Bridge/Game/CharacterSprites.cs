@@ -111,6 +111,69 @@ internal static class CharacterSprites
     }
 
     /// <summary>
+    /// The frames and the style of a set the game holds, as a mod would hand them to <see cref="TryCreate"/>:
+    /// the game's own fallback art of either kind, or one the game loaded for a skin. False when the object is
+    /// not one of the game's sets, or when its frames are not the whole grid the animator indexes - the frames
+    /// travel as handles and are validated the same way a set a mod builds is.
+    /// <para>
+    /// What it does not carry is the set's own trims: those are part of what a rebuilt set takes from the game's
+    /// fallback pixel art, exactly as a set a mod builds does, so a caller that reads a skin apart gets that
+    /// skin's frames and flags and the game's own trimming.
+    /// </para>
+    /// </summary>
+    internal static bool TryUnwrap(
+        object set,
+        out CharacterSpriteSetFrames frames,
+        out CharacterSpriteSetStyle style)
+    {
+        frames = default;
+        style = default;
+        if (set is not CharacterSpriteSetCompact art || art is null)
+            return false;
+
+        var main = Wrapped(art.MainSprite);
+        var eyes = Wrapped(art.EyeSprite);
+        var hair = Wrapped(art.HairSprite);
+        var back = Wrapped(art.BackSprite);
+        if (main is null || eyes is null || hair is null || back is null)
+            return false;
+
+        frames = new CharacterSpriteSetFrames(main.Value, eyes.Value, hair.Value, back.Value);
+        style = new CharacterSpriteSetStyle
+        {
+            DoNotUseEyeSprite = art.DoNotUseEyeSprite,
+            HasPrebakedShadow = art.HasPrebakedShadow,
+            AnimationSpeedMultiplier = art.AnimationSpeedMultiplier,
+            ExtraYOffset = art.ExtraYOffset,
+            MoveSpeedMultiplier = art.MoveSpeedMultiplier,
+            IsHina = art.IsHina,
+            RotatePerTime = art.RotatePerTime,
+            DoNotHaveStepVFX = art.DoNotHaveStepVFX,
+        };
+        return true;
+    }
+
+    /// <summary>
+    /// A layer of the game's own frames as handles, or null when the layer is missing or carries a hole: a
+    /// layer the animator would index into nothing is a set no rebuild should be built from.
+    /// </summary>
+    private static ReadOnlyMemory<SpriteHandle>? Wrapped(Sprite[]? frames)
+    {
+        if (frames is null || frames.Length == 0)
+            return null;
+
+        var wrapped = new SpriteHandle[frames.Length];
+        for (var index = 0; index < frames.Length; index++)
+        {
+            if (frames[index] is not { } frame)
+                return null;
+            wrapped[index] = new UnitySpriteHandle(frame);
+        }
+
+        return wrapped;
+    }
+
+    /// <summary>
     /// The character a mod wrapped, or null when the object carries none. The unit itself, its game object or
     /// any component on it are all the same character to a caller.
     /// </summary>

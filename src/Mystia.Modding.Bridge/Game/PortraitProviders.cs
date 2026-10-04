@@ -22,43 +22,52 @@ namespace Mystia.Modding.Bridge;
 internal static class PortraitProviders
 {
     /// <summary>
-    /// The clothes the game currently has loaded. <c>DataBaseCharacter.SetupPortrayalVisual</c> reads
+    /// The index of the clothes the game currently has loaded. <c>DataBaseCharacter.SetupPortrayalVisual</c> reads
     /// its own field first, so that field is authoritative; <c>RunTimeAlbum.GetPlayerClothes</c> covers
-    /// the window before the skin was loaded.
+    /// the window before the skin was loaded. Negative when there are no clothes to ask about.
     /// </summary>
-    internal static ClothesProfile.Clothes? CurrentClothes()
+    internal static int CurrentClothIndex()
     {
+        ClothesProfile.Clothes? clothes;
         if (DataBaseCharacter.m_ClothesData is { } loaded)
-            return loaded;
-        try
+            clothes = loaded;
+        else
         {
-            return RunTimeAlbum.GetPlayerClothes();
+            try
+            {
+                clothes = RunTimeAlbum.GetPlayerClothes();
+            }
+            catch (Exception error)
+            {
+                GameBridgeHook.Trace($"PortraitProviders: cannot resolve the player clothes: {error.GetBaseException().Message}");
+                clothes = null;
+            }
         }
-        catch (Exception error)
-        {
-            GameBridgeHook.Trace($"PortraitProviders: cannot resolve the player clothes: {error.GetBaseException().Message}");
-            return null;
-        }
+
+        return clothes?.index ?? -1;
     }
 
-    /// <summary>First provider that resolves the clothes wins; failures never disturb the pipeline.</summary>
-    internal static Sprite? Resolve(ClothesProfile.Clothes? clothes)
+    /// <summary>
+    /// First provider that answers for the garment wins; failures never disturb the pipeline. A provider answers
+    /// in handles, so the sprite the panel draws is the one this framework built or wrapped.
+    /// </summary>
+    internal static Sprite? Resolve(int clothIndex)
     {
-        if (clothes is null)
+        if (clothIndex < 0)
             return null;
         foreach (var provider in Dispatch.Instances<IPortraitProvider>())
         {
             try
             {
-                if (!provider.TryResolvePortrait(clothes, out var sprite))
+                if (!provider.TryResolvePortrait(clothIndex, out var portrait))
                     continue;
-                if (sprite is null)
+                if (portrait is not UnitySpriteHandle { Sprite: not null } resolved)
                 {
                     GameBridgeHook.Trace($"PortraitProviders: {provider.GetType().FullName} reported a hit without a sprite");
                     continue;
                 }
 
-                return sprite;
+                return resolved.Sprite;
             }
             catch (Exception error)
             {
@@ -91,7 +100,7 @@ internal static class PortraitProviderSeams
         {
             if (imageComponent is null)
                 return;
-            var sprite = PortraitProviders.Resolve(PortraitProviders.CurrentClothes());
+            var sprite = PortraitProviders.Resolve(PortraitProviders.CurrentClothIndex());
             if (sprite is not null)
                 imageComponent.overrideSprite = sprite;
         }

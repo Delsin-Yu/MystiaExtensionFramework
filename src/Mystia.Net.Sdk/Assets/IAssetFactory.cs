@@ -143,4 +143,29 @@ public interface IAssetFactory
     /// <param name="color">The colour of the pixel; a component that is not finite is refused.</param>
     /// <param name="texture">The texture, or null when the colour was refused.</param>
     bool TryCreateSolidTexture(Color color, [NotNullWhen(true)] out TextureHandle? texture);
+
+    /// <summary>
+    /// Wraps a sprite the game itself holds — a frame of the game's own art, or one a mod reached through the
+    /// game's own asset reference — so it can be handed to a surface that speaks in handles, the way a sprite
+    /// this factory cut is. Nothing is built and nothing is copied: the handle answers for the object the game
+    /// loaded, which is what makes a mod able to say "this one" about art it did not bring.
+    /// </summary>
+    /// <param name="sprite">The object the game holds. Anything that is not a sprite is refused.</param>
+    /// <param name="handle">The handle, or null when the object was refused.</param>
+    bool TryWrapSprite(object sprite, [NotNullWhen(true)] out SpriteHandle? handle);
+
+    /// <summary>
+    /// Reads a character pixel sprite set the game holds apart into the frames and the style a mod would hand
+    /// to <see cref="TryCreateCharacterSpriteSet"/>: the set the game's own fallback art of either kind is
+    /// (<c>DataBaseCharacter.FallbackCompactPixel</c> and its layered counterpart), or one a mod reached through
+    /// the game's own skin data. That is how a set is rebuilt from the game's own art — the same frames with a
+    /// movement flag the mod states itself, or with the frames it painted over replaced by its own.
+    /// </summary>
+    /// <param name="set">The game's own set object, either kind.</param>
+    /// <param name="frames">The set's frames, wrapped as handles; empty when the set was refused.</param>
+    /// <param name="style">The set's own movement flags, so a rebuild that states nothing keeps them.</param>
+    bool TryUnwrapCharacterSpriteSet(
+        object set,
+        out CharacterSpriteSetFrames frames,
+        out CharacterSpriteSetStyle style);
 }

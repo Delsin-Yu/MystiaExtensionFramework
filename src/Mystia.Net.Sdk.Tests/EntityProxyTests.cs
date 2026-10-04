@@ -255,6 +255,9 @@ public sealed class EntityProxyTests
                      typeof(DishHandle),
                      typeof(DishProxy),
                      typeof(GuestDescription),
+                     typeof(IPortraitProvider),
+                     typeof(IChatConfirmationListener),
+                     typeof(ChatConfirmationView),
                  })
         {
             foreach (var named in TypesNamedBy(type))

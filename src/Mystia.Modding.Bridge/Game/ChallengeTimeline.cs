@@ -311,16 +311,17 @@ internal sealed class ChallengeTimeline
     }
 
     /// <summary>
-    /// The step at <paramref name="resumePosition"/> ran. <paramref name="ran"/> is false when the game did not
-    /// run it after all (a listener or another patch held it), and the report is then dropped: the timeline only
-    /// reports what the game really did.
+    /// The step at <paramref name="resumePosition"/> ran and the loop moved on to <paramref name="nextPosition"/>.
+    /// <paramref name="ran"/> is false when the game did not run it after all (a listener or another patch held
+    /// it), and the report is then dropped: the timeline only reports what the game really did.
     /// </summary>
-    internal void StepRan(int resumePosition, bool ran)
+    internal void StepRan(int resumePosition, int nextPosition, bool ran)
     {
         if (!_running || !ran)
             return;
         var step = new ChallengeStep(resumePosition);
-        Dispatch.Run<IChallengeListener>(listener => listener.OnChallengeStepRan(step));
+        var next = new ChallengeStep(nextPosition);
+        Dispatch.Run<IChallengeListener>(listener => listener.OnChallengeStepRan(step, next));
     }
 
     // ---- the phase clock ----------------------------------------------------------------------------

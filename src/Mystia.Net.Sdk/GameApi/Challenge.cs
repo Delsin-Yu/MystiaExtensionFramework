@@ -147,6 +147,36 @@ namespace Mystia.Scenes
 
         internal int Index { get; }
 
+        // The steps a mod exchanges phase data at, named by what the loop does there. The numbers are the resume
+        // positions of the compiled loop, audited against the pinned build's own state machine
+        // (YuyukoBossData.<MainChallengeLoop>d__16.MoveNext): a mod compares the step it is handed against these
+        // instead of against a number, so a build whose numbering moved fails to compile its own seam rather
+        // than holding the wrong step.
+        /// <summary>
+        /// Phase one settled and is judged: the step stops the phase's spawn routine, clears the desk and queue
+        /// registrations, and decides by the run's takings. It ends at <see cref="Phase1Failed"/> or
+        /// <see cref="Phase1Story"/>.
+        /// </summary>
+        public static ChallengeStep Phase1Settled { get; } = new(4);
+
+        /// <summary>Phase one's failure story, which the settle step reached.</summary>
+        public static ChallengeStep Phase1Failed { get; } = new(5);
+
+        /// <summary>The story wait after phase one succeeded.</summary>
+        public static ChallengeStep Phase1Story { get; } = new(6);
+
+        /// <summary>Phase two stopped counting: its spawn routine is stopped and its spell counter unhooked.</summary>
+        public static ChallengeStep Phase2CountingStopped { get; } = new(9);
+
+        /// <summary>Phase two settled and is judged, the way <see cref="Phase1Settled"/> judges phase one.</summary>
+        public static ChallengeStep Phase2Settled { get; } = new(10);
+
+        /// <summary>The phase three ending that prepares the retake.</summary>
+        public static ChallengeStep Phase3EndingPreparingRetake { get; } = new(15);
+
+        /// <summary>The phase three ending that ends the run.</summary>
+        public static ChallengeStep Phase3Ended { get; } = new(16);
+
         public bool Equals(ChallengeStep other) => Index == other.Index;
 
         public override bool Equals(object? obj) => obj is ChallengeStep other && Equals(other);
@@ -423,8 +453,13 @@ namespace Mystia.Listeners
         /// </summary>
         void OnPreChallengeStep(ChallengeStep step, ref bool cancelInvocation) { }
 
-        /// <summary>The step at <paramref name="step"/> ran and the loop moved on from there.</summary>
-        void OnChallengeStepRan(ChallengeStep step) { }
+        /// <summary>
+        /// The step at <paramref name="step"/> ran and the loop moved on to <paramref name="next"/> - which is
+        /// the step it will resume at, or the step it is waiting inside when the step started a routine of its
+        /// own. A mod that follows what a step settled watches the pair: phase one's settle step is the one
+        /// that ends at <see cref="ChallengeStep.Phase1Failed"/> or <see cref="ChallengeStep.Phase1Story"/>.
+        /// </summary>
+        void OnChallengeStepRan(ChallengeStep step, ChallengeStep next) { }
 
         /// <summary>A phase of the running challenge started, before that phase's clock starts.</summary>
         void OnChallengePhaseStarted(ChallengePhaseInfo phase) { }

@@ -104,7 +104,7 @@ internal static class ChallengeRunSeams
         private static void Postfix(RunLoop __instance, ref bool __result, int __state, bool __runOriginal)
         {
             Attach(__instance);
-            ChallengeTimeline.Shared.StepRan(__state, __runOriginal);
+            ChallengeTimeline.Shared.StepRan(__state, __instance.__1__state, __runOriginal);
             if (!__runOriginal || __result)
                 return;
             YuyukoBossMirror.Dropped();

@@ -69,7 +69,7 @@ public sealed class ChallengeTests : IDisposable
         Timeline.StartRun();
 
         var allowed = Timeline.InterceptStep(9);
-        Timeline.StepRan(9, allowed);
+        Timeline.StepRan(9, 9, allowed);
         Assert.True(allowed);
         Assert.Equal(new[] { "ran:pre-step", "ran:step-ran" }, ran.Events);
 
@@ -77,7 +77,7 @@ public sealed class ChallengeTests : IDisposable
         Listen(held);
         ran.Events.Clear();
         var cancelled = Timeline.InterceptStep(7);
-        Timeline.StepRan(7, cancelled);
+        Timeline.StepRan(7, 7, cancelled);
 
         Assert.False(cancelled);
         // The hold is reported to every listener, and the step itself is not reported as ran to any of them:
@@ -98,7 +98,7 @@ public sealed class ChallengeTests : IDisposable
         // The listener allows the step, but the game did not run it after all - another patch held it - and the
         // timeline only reports what the game really did.
         Assert.True(Timeline.InterceptStep(2));
-        Timeline.StepRan(2, false);
+        Timeline.StepRan(2, 2, false);
 
         Assert.Equal(new[] { "only:pre-step" }, recorder.Events);
     }
@@ -1257,7 +1257,7 @@ public sealed class ChallengeTests : IDisposable
             cancelInvocation = true;
         }
 
-        public void OnChallengeStepRan(ChallengeStep step) => _events.Add($"{_name}:step-ran");
+        public void OnChallengeStepRan(ChallengeStep step, ChallengeStep next) => _events.Add($"{_name}:step-ran");
 
         public void OnChallengePhaseStarted(ChallengePhaseInfo phase) => _events.Add($"{_name}:phase-started");
 

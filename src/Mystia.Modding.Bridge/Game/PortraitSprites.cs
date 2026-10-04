@@ -138,11 +138,15 @@ internal static class PortraitSeams
     [HarmonyPatch(typeof(CharacterPortrayal), nameof(CharacterPortrayal.LoadSpellPortrayal))]
     private static class Spell
     {
-        private static void Postfix(CharacterPortrayal __instance, ref (UniTask<IAssetHandle<Sprite>> positivePortrayal, UniTask<IAssetHandle<Sprite>> negativePortrayal) __result)
+        private static void Postfix(CharacterPortrayal __instance, ref Il2CppSystem.ValueTuple<UniTask<IAssetHandle<Sprite>>, UniTask<IAssetHandle<Sprite>>> __result)
         {
             if (!PortraitSprites.TryGet(__instance, out var faces))
                 return;
-            __result = (Face(faces, __instance.positiveSpellCardFace), Face(faces, __instance.negativeSpellCardFace));
+            // The game builds a pair, which the interop spells Il2CppSystem.ValueTuple: the two handles are its
+            // Item1 and Item2, and only that type is the one the patched method really returns.
+            __result = new Il2CppSystem.ValueTuple<UniTask<IAssetHandle<Sprite>>, UniTask<IAssetHandle<Sprite>>>(
+                Face(faces, __instance.positiveSpellCardFace),
+                Face(faces, __instance.negativeSpellCardFace));
         }
 
         private static UniTask<IAssetHandle<Sprite>> Face(Sprite[] faces, int index)

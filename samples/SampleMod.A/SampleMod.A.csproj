@@ -1,4 +1,4 @@
-<Project Sdk="Mystia.Extension.Sdk/2.0.0">
+<Project Sdk="Mystia.Extension.Sdk/2.0.1">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -40,12 +40,13 @@ internal static class GuestGroupListenerSeams
 {
     // The order generation result lives in a local of GenerateOrderSession's closure local function:
     // GenerateOrderSession returns void and GuestGroupController.GenerateOrder only sees the order,
-    // so no public member exposes it. The interop keeps compiler-generated names verbatim
-    // (InteropGen sets PassthroughNames), which C# cannot spell, so that closure is addressed by
-    // name only. If the interop is regenerated with sanitized names, this patch stops resolving
-    // and lands in host.log instead of dispatching.
-    private const string OrderSessionType = "NightScene.GuestManagementUtility.GuestsManager+<>c__DisplayClass174_0";
-    private const string OrderSessionMethod = "<GenerateOrderSession>g__GenerateOrderInternal|1";
+    // so no public member exposes it. The closure is compiler-generated: the interop renames it and
+    // its local functions (__c__DisplayClass174_0, Method_Internal_<return>_<parameters>_<index>), so
+    // both names below come off the interop dump (artifacts/interop) rather than the game source, and
+    // they change with the build; a stale name does not resolve at runtime and lands in host.log
+    // instead of dispatching.
+    private const string OrderSessionType = "NightScene.GuestManagementUtility.GuestsManager+__c__DisplayClass174_0";
+    private const string OrderSessionMethod = "Method_Internal_OrderGenerationResult_GuestGroupController_byref_OrderBase_0";
 
     [HarmonyPatch(OrderSessionType, OrderSessionMethod)]
     private static class OrderGenerated

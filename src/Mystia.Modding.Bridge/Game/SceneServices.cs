@@ -425,8 +425,8 @@ internal sealed class PrepNightSceneServices : IPrepNightSceneServices
         {
             ServiceScope.Require();
             var panel = PrepPanels.Config ?? throw new InvalidOperationException("The prep panel is not open.");
-            var method = AccessTools.Method(typeof(IzakayaConfigPannel), "_SolveDailyCompletion_b__61_7")
-                ?? AccessTools.Method(typeof(IzakayaConfigPannel), "SolveDailyCompletion")
+            var method = AccessTools.Method(typeof(IzakayaConfigPannel), nameof(IzakayaConfigPannel._SolveDailyCompletion_b__64_7))
+                ?? AccessTools.Method(typeof(IzakayaConfigPannel), nameof(IzakayaConfigPannel.SolveDailyCompletion))
                 ?? throw new MissingMethodException(typeof(IzakayaConfigPannel).FullName, "SolveDailyCompletion");
             // The callback carries the SetCompleteEnabled gate, so the service's own press bypasses it.
             StockGate.Bypass(() => method.Invoke(panel, null));

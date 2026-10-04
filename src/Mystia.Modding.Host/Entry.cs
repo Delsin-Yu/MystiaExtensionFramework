@@ -35,6 +35,11 @@ internal static class Entry
         var logPath = Path.Combine(launcherDirectory, "host.log");
         void Write(string line) => File.AppendAllText(logPath, DateTime.Now.ToString("HH:mm:ss.fff ") + line + Environment.NewLine);
 
+        // The game process has no console and the runtime fail-fasts a background thread's exception, so
+        // without these two handlers the most common way a run dies leaves no reason anywhere at all.
+        AppDomain.CurrentDomain.UnhandledException += (_, args) => Write("Unhandled exception: " + args.ExceptionObject);
+        TaskScheduler.UnobservedTaskException += (_, args) => Write("Unobserved task exception: " + args.Exception);
+
         try
         {
             Write("Host entry.");

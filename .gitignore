@@ -5,3 +5,6 @@ artifacts/
 *.user
 .idea
 .vscode/
+
+# Agent scratch: builds, harnesses and logs kept out of the tree
+.spinney/

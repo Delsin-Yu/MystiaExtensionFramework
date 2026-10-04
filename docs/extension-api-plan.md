@@ -172,7 +172,7 @@ Mapping tables `FoodsMapping`, `BeveragesMapping` and `RecipesMapping` record th
 
 ## Tooling
 
-`Mystia.InteropGen` accepts a Unity project's `Library/ScriptAssemblies` as the managed source and takes Unity base libraries from a separate directory, so interop can be generated without an IL2CPP symbols build.
+`Mystia.InteropGen` takes the game project directory and the install directory. The managed source is a `Managed` backup under the project's `Build` folder (the `Symbols` flavour when there is one); `GameAssembly.dll` and `global-metadata.dat` come from the install directory, and generation is refused unless that `GameAssembly.dll` is the pinned build. `Library/ScriptAssemblies` is not a usable source: the unstripped project assemblies do not match the stripped engine modules and the generator throws.
 
 ## Delivered
 

@@ -10,7 +10,7 @@ namespace Mystia.Modding.Bridge;
 // inside StockGate.Bypass.
 internal static class PrepCompleteHolds
 {
-    private const string CompletionCallback = "_SolveDailyCompletion_b__61_7";
+    private const string CompletionCallback = "_SolveDailyCompletion_b__64_7";
 
     [HarmonyPatch(typeof(IzakayaConfigPannel), CompletionCallback)]
     private static class Confirm

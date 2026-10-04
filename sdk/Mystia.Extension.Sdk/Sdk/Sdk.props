@@ -6,5 +6,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <!-- A mod is deployed as a folder, so its own package and project dependencies belong next to it. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 </Project>

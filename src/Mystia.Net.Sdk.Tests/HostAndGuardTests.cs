@@ -433,4 +433,42 @@ public sealed class HostAndGuardTests
             root.Delete(true);
         }
     }
+
+    [Fact]
+    public void TheProxyInstallsBesideTheGameAndLeavesAStrangeVersionDllAlone()
+    {
+        var root = Directory.CreateTempSubdirectory("mystia-proxy");
+        try
+        {
+            var launcher = Path.Combine(root.FullName, "launcher");
+            var game = Path.Combine(root.FullName, "game");
+            Directory.CreateDirectory(launcher);
+            Directory.CreateDirectory(game);
+            var payload = Path.Combine(launcher, "Mystia.Proxy.dll");
+            File.WriteAllBytes(payload, [1, 2, 3, 4]);
+
+            var installed = ProxyInstall.Install(game, launcher, payload, force: false);
+            Assert.True(installed.Ok, installed.Message);
+            Assert.Equal(new byte[] { 1, 2, 3, 4 }, File.ReadAllBytes(Path.Combine(game, "version.dll")));
+            Assert.Equal(launcher, File.ReadAllText(Path.Combine(game, "Mystia.Proxy.txt")).Trim());
+
+            // Reinstalling over our own copy needs no --force.
+            Assert.True(ProxyInstall.Install(game, launcher, payload, force: false).Ok);
+
+            // A version.dll we did not write is left where it is unless --force says otherwise.
+            File.WriteAllBytes(Path.Combine(game, "version.dll"), [9, 9]);
+            Assert.False(ProxyInstall.Install(game, launcher, payload, force: false).Ok);
+            Assert.Equal(new byte[] { 9, 9 }, File.ReadAllBytes(Path.Combine(game, "version.dll")));
+            Assert.True(ProxyInstall.Install(game, launcher, payload, force: true).Ok);
+
+            var uninstalled = ProxyInstall.Uninstall(game, launcher, payload);
+            Assert.Contains("removed", uninstalled.Message);
+            Assert.False(File.Exists(Path.Combine(game, "version.dll")));
+            Assert.False(File.Exists(Path.Combine(game, "Mystia.Proxy.txt")));
+        }
+        finally
+        {
+            root.Delete(true);
+        }
+    }
 }

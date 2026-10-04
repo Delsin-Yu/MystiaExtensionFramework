@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
 using HarmonyLib.Public.Patching;
@@ -34,30 +34,58 @@ internal static class GameBridgeHook
         ClassInjector.RegisterTypeInIl2Cpp<MainThreadPump>();
         PortraitSprites.RegisterHandles();
         System.Threading.Volatile.Write(ref _runtimeReady, 1);
-        // IL2CPP methods are patched through X64DetourProvider. Harmony's native detour
-        // resolver installs MonoMod's JIT hook before it looks at the method.
+        // Every seam is installed by Il2CppInterop's patcher, which ends in the bridge's own x64 detour.
+        // Both of MonoMod's entry points stay out of this process: the native detour resolver installs
+        // MonoMod's JIT hook before it even looks at the method, and so does the managed resolver, which is
+        // only reached for a patch Il2CppInterop declines - a closed generic, for instance. Once that hook
+        // is installed, a patch whose target carries a struct has to resolve the interop class pointer
+        // while Patch() runs, and the hook throws 0x8007000B instead, so the seam never installs.
+        // Keeping both out is also why no seam may target a closed generic: see SingletonAwake below.
         PatchManager.ResolvePatcher -= NativeDetourMethodPatcher.TryResolve;
+        PatchManager.ResolvePatcher -= ManagedMethodPatcher.TryResolve;
         var harmony = new Harmony("dev.mystia.modding.bridge");
-        var singletonAwake = AccessTools.Method(
-            typeof(DEYU.Singletons.MonoSingletonPersistant<>).MakeGenericType(typeof(Common.UI.UniversalGameManager)),
-            "Awake");
-        harmony.Patch(singletonAwake, postfix: new HarmonyMethod(typeof(GameBridgeHook), nameof(OnSingletonAwake), Type.EmptyTypes));
+        var applied = 0;
+        var failed = 0;
         foreach (var type in typeof(GameBridgeHook).Assembly.GetTypes())
         {
             try
             {
-                new PatchClassProcessor(harmony, type).Patch();
+                applied += new PatchClassProcessor(harmony, type).Patch()?.Count ?? 0;
             }
             catch (Exception error)
             {
-                Trace(type.FullName + ": " + error.GetBaseException().Message);
+                failed++;
+                var failure = error.GetBaseException();
+                Trace($"{type.FullName}: {failure.GetType().Name}: {failure.Message}{Environment.NewLine}{failure.StackTrace}");
+                if (failure is BadImageFormatException)
+                {
+                    // Established by experiment: a target whose signature carries a non-primitive struct
+                    // (OnSprintPerformed(CallbackContext), WriteCurrentPlayerDataToSlotAsync -> UniTask<...>)
+                    // cannot be detoured on this runtime - MonoMod's JIT hook throws while compiling the
+                    // wrapper. Patch a funnel instead: the same setter or a parameterless entry point.
+                    Trace($"{type.FullName}: the target signature carries a struct, which this runtime cannot detour; patch a funnel with primitive or reference parameters.");
+                }
             }
         }
+
+        // One line a real run can be judged by: every seam of this build either patches or names itself above.
+        Trace($"seams: {applied} patch methods applied, {failed} failed");
     }
 
     private static int _runtimeReady;
     private static int _pumpCreated;
     private static bool _singletonLogged;
+
+    /// <summary>
+    /// The game's universal manager derives from a closed generic singleton whose Awake runs OnAwake.
+    /// Il2CppInterop cannot detour a closed generic, so the seam hangs on the concrete OnAwake instead -
+    /// and it stays a seam (not a special case) so it is patched, counted and reported with the rest.
+    /// </summary>
+    [HarmonyPatch(typeof(Common.UI.UniversalGameManager), nameof(Common.UI.UniversalGameManager.OnAwake))]
+    private static class SingletonAwake
+    {
+        private static void Postfix() => OnSingletonAwake();
+    }
 
     private static void OnSingletonAwake()
     {

@@ -1,6 +1,9 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
+
 using Iced.Intel;
 using Il2CppInterop.Runtime.Injection;
+using Il2CppInterop.Runtime.Runtime;
 
 namespace Mystia.Modding.Bridge;
 
@@ -10,8 +13,68 @@ namespace Mystia.Modding.Bridge;
 /// </summary>
 internal sealed class X64DetourProvider : IDetourProvider
 {
-    public IDetour Create<TDelegate>(nint original, TDelegate target) where TDelegate : Delegate =>
-        new Hook(original, target);
+    /// <summary>
+    /// Il2CppInterop's hook on the IL2CPP collector's finalizer. It resolves a class pointer for every
+    /// object the collector finalises, and it locates its target by scanning GameAssembly for a byte
+    /// signature. On this player the address that scan finds is not the finalizer, so the hook throws a
+    /// NullReferenceException on the collector's own thread, which takes the whole game down with a
+    /// fail-fast (0xc0000409, faulting module coreclr) within seconds of the host starting.
+    /// Il2CppInterop already answers this case itself - a hook whose target it cannot find disables the
+    /// object pool - so the framework takes that answer instead of installing the hook.
+    /// </summary>
+    private const string CollectorsFinalizerHook = "Il2CppInterop.Runtime.Injection.Hooks.GarbageCollector_RunFinalizer_Patch";
+
+    public IDetour Create<TDelegate>(nint original, TDelegate target) where TDelegate : Delegate
+    {
+        if (target.Method.DeclaringType?.FullName == CollectorsFinalizerHook)
+        {
+            if (DisableObjectPooling())
+                GameBridgeHook.Trace("Il2CppInterop's collector finalizer hook was not installed: its target does not exist in this player, and the object pool was switched off in its place.");
+            return new Skipped(original);
+        }
+
+        return new Hook(original, target);
+    }
+
+    /// <summary>
+    /// The pool caches managed wrappers per native object; without the finalizer hook it would keep handing
+    /// out wrappers for objects the collector has already freed. Its own switch turns that caching off.
+    /// </summary>
+    private static bool DisableObjectPooling()
+    {
+        var property = typeof(Il2CppObjectPool).GetProperty(
+            "DisableCaching",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+        if (property is null || property.PropertyType != typeof(bool))
+            return false;
+
+        property.SetValue(null, true);
+        return true;
+    }
+
+    /// <summary>
+    /// The detour that is not installed. The original function stays reachable, which is what "no hook"
+    /// means for the caller: anything that would have called through the trampoline calls the game itself.
+    /// </summary>
+    private sealed class Skipped(nint original) : IDetour
+    {
+        public nint Target => original;
+
+        public nint Detour => 0;
+
+        public nint OriginalTrampoline => original;
+
+        public void Apply()
+        {
+        }
+
+        public T GenerateTrampoline<T>() where T : Delegate =>
+            Marshal.GetDelegateForFunctionPointer<T>(original);
+
+        public void Dispose()
+        {
+        }
+    }
 
     internal sealed class Hook : IDetour
     {

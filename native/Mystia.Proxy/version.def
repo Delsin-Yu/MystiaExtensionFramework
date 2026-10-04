@@ -1,0 +1,18 @@
+EXPORTS
+    GetFileVersionInfoA=proxy_GetFileVersionInfoA
+    GetFileVersionInfoW=proxy_GetFileVersionInfoW
+    GetFileVersionInfoByHandle=proxy_GetFileVersionInfoByHandle
+    GetFileVersionInfoExA=proxy_GetFileVersionInfoExA
+    GetFileVersionInfoExW=proxy_GetFileVersionInfoExW
+    GetFileVersionInfoSizeA=proxy_GetFileVersionInfoSizeA
+    GetFileVersionInfoSizeW=proxy_GetFileVersionInfoSizeW
+    GetFileVersionInfoSizeExA=proxy_GetFileVersionInfoSizeExA
+    GetFileVersionInfoSizeExW=proxy_GetFileVersionInfoSizeExW
+    VerFindFileA=proxy_VerFindFileA
+    VerFindFileW=proxy_VerFindFileW
+    VerInstallFileA=proxy_VerInstallFileA
+    VerInstallFileW=proxy_VerInstallFileW
+    VerLanguageNameA=proxy_VerLanguageNameA
+    VerLanguageNameW=proxy_VerLanguageNameW
+    VerQueryValueA=proxy_VerQueryValueA
+    VerQueryValueW=proxy_VerQueryValueW

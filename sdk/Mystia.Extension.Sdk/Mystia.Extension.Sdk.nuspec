@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>Mystia.Extension.Sdk</id>
-    <version>2.0.0</version>
+    <version>2.0.1</version>
     <authors>Delsin-Yu</authors>
     <description>MSBuild SDK and contract for Mystia's Izakaya community mods. Unofficial. Does not modify the Steam game.</description>
     <license type="expression">MIT</license>

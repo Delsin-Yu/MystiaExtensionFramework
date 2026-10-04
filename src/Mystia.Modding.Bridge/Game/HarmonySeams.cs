@@ -2,6 +2,7 @@ using Common.CharacterUtility;
 using Common.TimelineExtestion;
 using Common.UI;
 using DayScene.Input;
+using DEYU.AdpUISystem.PanelCollection;
 using GameData.Core.Collections;
 using GameData.Core.Collections.CharacterUtility;
 using GameData.Core.Collections.DaySceneUtility;
@@ -240,7 +241,9 @@ internal static class PrepSeams
         }
     }
 
-    [HarmonyPatch(typeof(IzakayaConfigPannel), "_SolveDailyCompletion_b__61_7")]
+    // The confirm callback is a compiler-generated closure, so it has no nameof: its interop name, and the
+    // display-class number in it, come from the build the interop was generated from.
+    [HarmonyPatch(typeof(IzakayaConfigPannel), "_SolveDailyCompletion_b__64_7")]
     private static class Ready
     {
         private static void Postfix(IzakayaConfigPannel __instance)
@@ -324,10 +327,16 @@ internal static class PrepPanelCache
         }
     }
 
-    [HarmonyPatch(typeof(IzakayaConfigPannel), nameof(IzakayaConfigPannel.OnPanelClose))]
+    // IzakayaConfigPannel does not override OnPanelClose, so closing it runs UIPanelBaseImpl's
+    // implementation: the seam patches the declaring type and takes the config panel's own instances.
+    [HarmonyPatch(typeof(UIPanelBaseImpl), nameof(UIPanelBaseImpl.OnPanelClose))]
     private static class ConfigClose
     {
-        private static void Postfix(IzakayaConfigPannel __instance) => PanelViewCache.DropPrepConfig(__instance);
+        private static void Postfix(UIPanelBaseImpl __instance)
+        {
+            if (__instance is IzakayaConfigPannel config)
+                PanelViewCache.DropPrepConfig(config);
+        }
     }
 }
 
@@ -395,16 +404,25 @@ internal static class DayInputSeams
             DayInputPipeline.CharacterReady(DayInputPipeline.Describe(__instance));
     }
 
-    [HarmonyPatch(typeof(DayScenePlayerInputGenerator), nameof(DayScenePlayerInputGenerator.OnSprintPerformed))]
+    /// <summary>
+    /// Both sprint callbacks only assign this set-only property, which forwards to the character's own
+    /// DoSprint. The callbacks themselves carry a CallbackContext and cannot be detoured on this runtime,
+    /// so the notification hangs on the property they both write - and the character filter keeps NPC
+    /// controllers, which share the setter, out of a listener meant for the local player.
+    /// </summary>
+    [HarmonyPatch(typeof(CharacterControllerInputGeneratorComponent), "set_Sprint")]
     private static class Sprint
     {
-        private static void Postfix() => Dispatch.Run<IDayInputListener>(listener => listener.OnSprintStarted());
-    }
-
-    [HarmonyPatch(typeof(DayScenePlayerInputGenerator), nameof(DayScenePlayerInputGenerator.OnSprintCanceled))]
-    private static class SprintStop
-    {
-        private static void Postfix() => Dispatch.Run<IDayInputListener>(listener => listener.OnSprintStopped());
+        private static void Postfix(CharacterControllerInputGeneratorComponent __instance, bool __0)
+        {
+            if (!DayInputPipeline.Describe(__instance.Character).IsLocalPlayer)
+                return;
+            GameBridgeHook.Trace($"sprint seam: {__instance.Character.name} -> {__0}");
+            if (__0)
+                Dispatch.Run<IDayInputListener>(listener => listener.OnSprintStarted());
+            else
+                Dispatch.Run<IDayInputListener>(listener => listener.OnSprintStopped());
+        }
     }
 
     [HarmonyPatch(typeof(DayScenePlayerInputGenerator), nameof(DayScenePlayerInputGenerator.TryInteract))]

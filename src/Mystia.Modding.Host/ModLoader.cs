@@ -49,36 +49,48 @@ internal static class ModLoader
 
         foreach (var manifest in ModOrder.Sort(manifests, modOrder))
         {
-            var assembly = System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyPath(manifest.AssemblyPath);
-            WarnOnBannedReferences(assembly, manifest, warn);
-            var entrance = assembly.GetCustomAttributes(typeof(ModEntranceAttribute), inherit: false)
-                .OfType<ModEntranceAttribute>()
-                .SingleOrDefault();
-            if (entrance is null)
+            // The mod's own directory joins the probe list before its assembly is loaded, so a dependency
+            // shipped beside the mod is found by the time the mod's own code binds it.
+            ModAssemblyResolver.Add(manifest.Directory);
+            try
             {
-                warn?.Invoke($"Mod '{manifest.Id}' has no generated entrance. The Mystia SDK generator did not run.");
-                continue;
+                var assembly = System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyPath(manifest.AssemblyPath);
+                WarnOnBannedReferences(assembly, manifest, warn);
+                var entrance = assembly.GetCustomAttributes(typeof(ModEntranceAttribute), inherit: false)
+                    .OfType<ModEntranceAttribute>()
+                    .SingleOrDefault();
+                if (entrance is null)
+                {
+                    warn?.Invoke($"Mod '{manifest.Id}' has no generated entrance. The Mystia SDK generator did not run.");
+                    continue;
+                }
+
+                var register = entrance.EntranceType.GetMethod(
+                    "Register",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+                    binder: null,
+                    types: [typeof(IModRegistrar)],
+                    modifiers: null);
+                if (register is null)
+                    throw new InvalidOperationException($"Mod '{manifest.Id}' entrance is missing Register.");
+
+                var before = registry.Count;
+                register.Invoke(null, [registry]);
+                var mod = new ScopedContext(host, manifest.Directory, manifest.Id, manifest.Version);
+                foreach (var instance in registry.InstancesAddedSince(before))
+                {
+                    // The origin is bound first: everything the bridge later asks "which mod is this?" about,
+                    // including the save handlers, resolves it here.
+                    ContentOrigin.Bind(instance, manifest.Id);
+                    if (instance is IInitialization initialization)
+                        initialization.Initialize(mod);
+                }
             }
-
-            var register = entrance.EntranceType.GetMethod(
-                "Register",
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
-                binder: null,
-                types: [typeof(IModRegistrar)],
-                modifiers: null);
-            if (register is null)
-                throw new InvalidOperationException($"Mod '{manifest.Id}' entrance is missing Register.");
-
-            var before = registry.Count;
-            register.Invoke(null, [registry]);
-            var mod = new ScopedContext(host, manifest.Directory, manifest.Id, manifest.Version);
-            foreach (var instance in registry.InstancesAddedSince(before))
+            catch (Exception error)
             {
-                // The origin is bound first: everything the bridge later asks "which mod is this?" about,
-                // including the save handlers, resolves it here.
-                ContentOrigin.Bind(instance, manifest.Id);
-                if (instance is IInitialization initialization)
-                    initialization.Initialize(mod);
+                // A mod that cannot load is the player's to see and fix, not the host's to die of: the mods
+                // beside it keep loading.
+                warn?.Invoke($"Mod '{manifest.Id}' failed to load and was skipped. {error}");
             }
         }
 

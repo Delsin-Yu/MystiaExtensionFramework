@@ -142,18 +142,18 @@ internal static class ModSaveSeams
         }
     }
 
-    [HarmonyPatch(typeof(SaveManagement), nameof(SaveManagement.WriteCurrentPlayerDataToSlotAsync))]
-    [HarmonyPriority(Priority.Last)]
+    /// <summary>
+    /// The save panel's confirm is the last main-thread step before the game snapshots and writes the player
+    /// data, and the only way into it: the panel's create/override flows both hand their action to this
+    /// call, and WriteCurrentPlayerDataToSlotAsync is reached from nowhere else. The target used to be that
+    /// write method itself, which cannot be detoured because it returns a UniTask struct; the confirm also
+    /// fires for the panel's "give up" choice, where the capture below is a harmless repeat.
+    /// </summary>
+    [HarmonyPatch(typeof(ResultScene.UI.ResultSceneSavePannel), nameof(ResultScene.UI.ResultSceneSavePannel.OpenConfirmPanel))]
     private static class PlayerDataSaving
     {
-        // The entry only starts its state machine here; generating the save data, serialising it and
-        // writing the file all happen later on the thread pool. The mods are collected and the carrier is
-        // swapped on the main thread first, so that background pass reads a snapshot nobody mutates.
-        private static void Prefix(bool __runOriginal)
+        private static void Prefix()
         {
-            if (!__runOriginal)
-                return;
-
             try
             {
                 if (!TryOpen(out var records, out var error))

@@ -24,10 +24,16 @@ internal static class InputHolds
         }
     }
 
-    [HarmonyPatch(typeof(DayScenePlayerInputGenerator), nameof(DayScenePlayerInputGenerator.OnSprintPerformed))]
+    /// <summary>
+    /// Holds the local player's sprint start. The input callback it used to patch cannot be detoured (its
+    /// parameter is an interop struct), and it only wrote this same property - so the gate covers the start
+    /// only, exactly like the callback it replaced, and lets the release through.
+    /// </summary>
+    [HarmonyPatch(typeof(CharacterControllerInputGeneratorComponent), "set_Sprint")]
     private static class Sprint
     {
-        private static bool Prefix() => StockGate.Allow(StockGate.Sprint);
+        private static bool Prefix(CharacterControllerInputGeneratorComponent __instance, bool __0) =>
+            !__0 || !DayInputPipeline.Describe(__instance.Character).IsLocalPlayer || StockGate.Allow(StockGate.Sprint);
     }
 
     [HarmonyPatch(typeof(DayScenePlayerInputGenerator), nameof(DayScenePlayerInputGenerator.TryInteract))]
@@ -129,13 +135,13 @@ internal static class SeatHolds
 
 internal static class OrderHolds
 {
-    // The order generation result lives in a local function of GenerateOrderSession's closure, which
-    // C# cannot spell; the interop keeps compiler-generated names verbatim (see GuestGroupListenerSeams).
-    private const string OrderSessionType = "NightScene.GuestManagementUtility.GuestsManager+<>c__DisplayClass174_0";
+    // The order generation result lives in a local function of GenerateOrderSession's closure; the
+    // interop renames both the closure and its local functions (see GuestGroupListenerSeams).
+    private const string OrderSessionType = "NightScene.GuestManagementUtility.GuestsManager+__c__DisplayClass174_0";
 
-    private const string OrderInternalMethod = "<GenerateOrderSession>g__GenerateOrderInternal|1";
+    private const string OrderInternalMethod = "Method_Internal_OrderGenerationResult_GuestGroupController_byref_OrderBase_0";
 
-    private const string RemainingFundMethod = "<GenerateOrderSession>g__CheckRemainingFund|0";
+    private const string RemainingFundMethod = "Method_Internal_OrderGenerationResult_OrderGenerationResult_SpecialGuestsController_0";
 
     [HarmonyPatch(typeof(GuestsManager), "GenerateOrderSession")]
     private static class Session

@@ -49,6 +49,7 @@ internal static class Dispatch
         foreach (var listener in registry.GetInstances<T>())
             yield return listener;
     }
+
 }
 
 internal static class BridgeInstaller

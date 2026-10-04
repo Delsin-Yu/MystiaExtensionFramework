@@ -128,7 +128,7 @@ internal static class ChallengeStoryEvaluationSeam
         private static bool Prefix(
             StoryContext __instance,
             ref GuestGroupController.EvaluationResult lastResult,
-            GuestGroupController __,
+            GuestGroupController __1,
             ref bool oldComboProtect,
             out string message,
             out bool comboProtect,
@@ -141,10 +141,12 @@ internal static class ChallengeStoryEvaluationSeam
             message = string.Empty;
             comboProtect = false;
 
-            // The game names this argument `__` in its own source: the story attempt's callback ignores which
-            // group it was handed, but EvaluateOrder still passes the group it is evaluating.
+            // The game names this argument `__` in its own source, but Harmony reads any patch argument whose
+            // name starts with `__` as one of its own and `__` on its own carries no index, so the group is
+            // addressed by where it stands instead: `__1` is the callback's second argument. The story attempt's
+            // callback ignores which group it was handed, but EvaluateOrder still passes the group it evaluates.
             var run = ChallengeEvaluationSeams.Intercept(
-                ChallengeEvaluationSeams.Pointer(__),
+                ChallengeEvaluationSeams.Pointer(__1),
                 ref lastResult,
                 ref oldComboProtect,
                 message,

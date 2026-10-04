@@ -17,7 +17,8 @@
   <ItemGroup Condition="Exists('$(MystiaInteropDir)UnityEngine.CoreModule.dll')">
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(MystiaInteropDir)UnityEngine.CoreModule.dll</HintPath>
-      <Private>false</Private>
+      <!-- The host needs the proxy at run time too: the bridge builds engine objects from it. -->
+      <Private>true</Private>
     </Reference>
   </ItemGroup>
 </Project>

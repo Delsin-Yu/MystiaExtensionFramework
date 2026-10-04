@@ -70,6 +70,57 @@ void LogCode(const wchar_t* message, unsigned int code)
     Log(line);
 }
 
+// A crash inside the process is otherwise anonymous: the runtime fail-fasts and the only evidence left is
+// an offset inside coreclr.dll. This handler runs on the crashing thread before the process dies and writes
+// the exception plus a module-relative frame list, which is what identifies whose code went wrong.
+const char* ModuleNameOf(void* address, unsigned long long* offset)
+{
+    static wchar_t buffer[MAX_PATH];
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExW(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCWSTR>(address),
+            &module) ||
+        module == nullptr)
+    {
+        *offset = reinterpret_cast<unsigned long long>(address);
+        return "unknown";
+    }
+
+    *offset = reinterpret_cast<unsigned long long>(address) - reinterpret_cast<unsigned long long>(module);
+    static char name[MAX_PATH];
+    if (GetModuleFileNameW(module, buffer, MAX_PATH) == 0)
+        return "unknown";
+    WideCharToMultiByte(CP_UTF8, 0, buffer, -1, name, MAX_PATH, nullptr, nullptr);
+    const char* slash = strrchr(name, '\\');
+    return slash == nullptr ? name : slash + 1;
+}
+
+LONG CALLBACK CrashHandler(PEXCEPTION_POINTERS info)
+{
+    const DWORD code = info->ExceptionRecord->ExceptionCode;
+    if (code != 0xC0000409u && code != 0xC0000005u && code != 0xC000001Du)
+        return EXCEPTION_CONTINUE_SEARCH;
+
+    wchar_t line[256];
+    swprintf_s(line, L"CRASH 0x%08X at %p (argument 0x%llX)", code,
+               info->ExceptionRecord->ExceptionAddress,
+               static_cast<unsigned long long>(info->ExceptionRecord->ExceptionInformation[0]));
+    Log(line);
+
+    void* frames[40] = {};
+    const USHORT count = RtlCaptureStackBackTrace(0, 40, frames, nullptr);
+    for (USHORT index = 0; index < count; index++)
+    {
+        unsigned long long offset = 0;
+        const char* module = ModuleNameOf(frames[index], &offset);
+        swprintf_s(line, L"  frame %u: %S+0x%llX", index, module, offset);
+        Log(line);
+    }
+
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 bool InstallHook(void* target)
 {
     auto bytes = static_cast<uint8_t*>(target);
@@ -131,6 +182,21 @@ void StartManaged()
     swprintf_s(hostfxrPath, L"%s\\host\\hostfxr.dll", g_launcherDirectory);
     swprintf_s(runtimeConfig, L"%s\\host\\Mystia.Modding.Host.runtimeconfig.json", g_launcherDirectory);
     swprintf_s(assemblyPath, L"%s\\host\\Mystia.Modding.Host.dll", g_launcherDirectory);
+
+    // The runtime writes its own crash diagnostics - a fail-fast reason, a stack overflow's frames - to
+    // stderr, which a Windows player has nowhere to put. Keep them beside the other logs. The handle
+    // matters as much as the CRT stream: the runtime writes through GetStdHandle, not through stdio.
+    wchar_t stdErrPath[MAX_PATH];
+    swprintf_s(stdErrPath, L"%s\\stderr.log", g_launcherDirectory);
+    SECURITY_ATTRIBUTES attributes{};
+    attributes.nLength = sizeof(attributes);
+    attributes.bInheritHandle = TRUE;
+    const HANDLE stdErrFile = CreateFileW(stdErrPath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, &attributes, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (stdErrFile != INVALID_HANDLE_VALUE)
+    {
+        SetStdHandle(STD_ERROR_HANDLE, stdErrFile);
+        SetStdHandle(STD_OUTPUT_HANDLE, stdErrFile);
+    }
 
     const HMODULE hostfxr = LoadLibraryW(hostfxrPath);
     if (hostfxr == nullptr)
@@ -230,6 +296,8 @@ void CALLBACK OnDllNotification(ULONG reason, const NotificationData* data, void
 
 DWORD WINAPI BootThread(LPVOID)
 {
+    AddVectoredExceptionHandler(1, &CrashHandler);
+
     g_trampolineMemory = static_cast<uint8_t*>(VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
     if (g_trampolineMemory == nullptr)
     {

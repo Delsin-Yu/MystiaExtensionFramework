@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(Mystia.Bootstrap LANGUAGES CXX)
 add_library(Mystia.Bootstrap SHARED bootstrap.cpp)
+set_target_properties(Mystia.Bootstrap PROPERTIES PREFIX "")
 target_compile_features(Mystia.Bootstrap PRIVATE cxx_std_17)
 if(MSVC)
   target_compile_options(Mystia.Bootstrap PRIVATE /W4 /EHsc /utf-8)

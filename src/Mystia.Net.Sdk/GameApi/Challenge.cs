@@ -431,6 +431,33 @@ namespace Mystia.Scenes
         /// </para>
         /// </summary>
         bool SwallowCooker(int cookerIndex);
+
+        /// <summary>
+        /// Stops the run without a result: the challenge's own main loop and the routines it started are stopped,
+        /// the retake's buff is taken back with them (its cooker locks stop and the effects it spawned go), and
+        /// the cookers the framework swallowed for that run are unlocked. This is what a machine that was told
+        /// the run failed does before it carries the failure out with <see cref="ReplayFailure"/>.
+        /// <para>
+        /// The stopped run stays the framework's until <see cref="ReplayFailure"/>: its phase and clock are gone,
+        /// but the run still owns the scene, so a leave is held. Doing nothing when no run is live or the run was
+        /// already stopped.
+        /// </para>
+        /// </summary>
+        void StopRun();
+
+        /// <summary>
+        /// Carries the failure of the run <see cref="StopRun"/> stopped out on this machine, the way the machine
+        /// that ran it did: the observers the run registered are removed, the status panel it drove is hidden,
+        /// its boss's orders are cleaned up, the guests at the desks stop taking orders, and the game's own
+        /// failure story is started. The run ends with this call, so the leave that follows the failure story is
+        /// not held.
+        /// <para>
+        /// The story the caller's machine is in and any panel it has to close are the caller's own, which is why
+        /// this may run long after <see cref="StopRun"/>. Doing nothing when no stopped run waits: a new run, or
+        /// the scene leaving, already ended it.
+        /// </para>
+        /// </summary>
+        void ReplayFailure();
     }
 }
 

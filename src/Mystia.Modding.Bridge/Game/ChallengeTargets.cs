@@ -92,13 +92,20 @@ internal static class ChallengeTargets
         Field("the run's data", typeof(RunLoop), "__4__this");
         Field("the challenge data's phase length", typeof(GameData.Profile.YuyukoBossData), "singleRoundDuration");
         Field("the run's shared closure", typeof(RunLoop), "__8__1");
+        Field("the run's story routine", typeof(RunLoop), "_mainLoop_5__6");
+        Field("the run's timed negative spell routine", typeof(RunLoop), "_negativeSpellLoop_5__7");
+        Field("the run's stand spawn routine", typeof(RunLoop), "_standSpawnLoop_5__9");
         Field("the run's retake closure", typeof(RunLoop), "__8__3");
         Field("the boss's life", typeof(StoryContext), "yuyukoTotalLife");
         Field("the run's positive spell count", typeof(StoryContext), "positiveSpellCount");
         Field("the third phase's panel", typeof(StoryContext), "statusDisplayer");
         Field("the event manager", typeof(StoryContext), "eventManager");
+        Field("the guest manager", typeof(StoryContext), "guestsManager");
+        Field("the boss's controller", typeof(StoryContext), "yuyuko");
         Field("the boss's order flag", typeof(Retake), "ifYuyukoCouldOrder");
         Field("the picked cooker's position", typeof(RetakeHelper), "cookerPosition");
+        Field("the retake's cooker locks", typeof(Retake), "lockCookerCorotine");
+        Field("the retake's eating effects", typeof(Retake), "eatingGameObejct");
 
         Method("the phase clock's step", typeof(PhaseClock), "MoveNext");
         Method("the failure story's step", typeof(OnFailLoop), "MoveNext");
@@ -143,6 +150,14 @@ internal static class ChallengeTargets
         Property("the cooker's visual", typeof(CookController), nameof(CookController.visual));
         Property("the cooker's desk index", typeof(CookController), nameof(CookController.GridIndex));
         Method("the permanent hide", typeof(CookAnimator), nameof(CookAnimator.HideCookerPermanent));
+        Property(
+            "the challenge's positive spell observers",
+            typeof(GuestsManager),
+            nameof(GuestsManager.OnPositiveSpellTriggered));
+        Property("the fund observers", typeof(EventManager), nameof(EventManager.OnFundUpdateCallback));
+        Property("the desk guests", typeof(GuestsManager), nameof(GuestsManager.AllGuestInDeskController));
+        Method("the boss's order cleanup", typeof(GuestsManager), nameof(GuestsManager.CleanOrderInfo));
+        Method("one guest's order ban", typeof(GuestGroupController), nameof(GuestGroupController.SetGuestCannotOrder));
     }
 
     /// <summary>

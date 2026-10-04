@@ -51,6 +51,20 @@ internal interface IChallengeBossMirror
 
     /// <summary>The run's positive spell count so far, read and written like <see cref="EarnedFund"/>.</summary>
     int PositiveSpellCount { get; set; }
+
+    /// <summary>
+    /// Stops the run's own loop and the routines it started, the way the game does when its challenge fails: the
+    /// retake's buff is taken back with it (its cooker locks stop and the effects it spawned go). The run's
+    /// closure stays reachable for <see cref="ReplayFailure"/>, because carrying the failure out needs it.
+    /// </summary>
+    void StopRun();
+
+    /// <summary>
+    /// Carries the failure of the stopped run out on this machine: what the run registered with the scene is
+    /// cleaned up and the game's own failure story is started. Nothing of the run's loop is used, so this may run
+    /// after the caller's own scene settled.
+    /// </summary>
+    void ReplayFailure();
 }
 
 /// <summary>
@@ -76,6 +90,7 @@ internal sealed class ChallengeTimeline
 
     private ChallengeRunHandle _run;
     private bool _running;
+    private bool _stopped;
     private ChallengeRunKind _kind;
     private ChallengePhase _phase;
     private nint _displayer;
@@ -216,6 +231,40 @@ internal sealed class ChallengeTimeline
     }
 
     /// <summary>
+    /// The run was stopped rather than finished: its loop is stopped together with the routines it started and
+    /// the retake's buff is taken back, but the run stays this timeline's until its failure is carried out, so
+    /// the closure the services speak through is still there for <see cref="ReplayFailure"/>.
+    /// </summary>
+    internal void StopRun()
+    {
+        if (!_running || _stopped)
+            return;
+        _stopped = true;
+        _phase = ChallengePhase.None;
+        DropClock();
+        Array.Clear(_spawnVerdict);
+        Array.Clear(_clockRan);
+        BossMirror?.StopRun();
+        // The buff that locked the cookers is gone with the run, so the framework's own swallows are released
+        // here: the game's own cleanup for them never runs for a run that was stopped.
+        ChallengeCookerSwallows.Release();
+    }
+
+    /// <summary>
+    /// Carries the failure of the stopped run out. The run ends here - its exit window opens, so the leave that
+    /// follows the failure story is not held - and the engine side runs the game's own failure close. Does
+    /// nothing when no stopped run waits: a new run, or the scene leaving, already ended it.
+    /// </summary>
+    internal void ReplayFailure()
+    {
+        if (!_stopped || BossMirror is not { } mirror)
+            return;
+        EndRun();
+        _stopped = false;
+        mirror.ReplayFailure();
+    }
+
+    /// <summary>
     /// The challenge's own exit began - the game started closing the izakaya for the challenge. The exit window
     /// opens here as well as at the run's end, because the game may ask to leave the scene inside the step that
     /// starts the close, before the loop ever returns.
@@ -284,6 +333,7 @@ internal sealed class ChallengeTimeline
     internal void Reset()
     {
         _running = false;
+        _stopped = false;
         _phase = ChallengePhase.None;
         _kind = ChallengeRunKind.Story;
         _displayer = 0;
@@ -990,5 +1040,17 @@ internal sealed class ChallengeServices : IWorkSceneChallengeServices
     {
         ServiceScope.Require();
         return ChallengeTimeline.Shared.SwallowCooker(cookerIndex);
+    }
+
+    public void StopRun()
+    {
+        ServiceScope.Require();
+        ChallengeTimeline.Shared.StopRun();
+    }
+
+    public void ReplayFailure()
+    {
+        ServiceScope.Require();
+        ChallengeTimeline.Shared.ReplayFailure();
     }
 }

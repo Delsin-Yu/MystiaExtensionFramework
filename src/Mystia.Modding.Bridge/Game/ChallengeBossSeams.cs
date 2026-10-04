@@ -1,13 +1,19 @@
 using HarmonyLib;
+using Il2CppSystem.Linq;
 using Mystia.Listeners;
 using NightScene;
 using NightScene.CookingUtility;
+using NightScene.EventUtility;
 using NightScene.GuestManagementUtility;
 using NightScene.Tiles;
+using UnityEngine;
 
 using OnFailLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObObObUnique;
 using Retake = GameData.Profile.YuyukoBossData.__c__DisplayClass16_6;
+using RunLoop = GameData.Profile.YuyukoBossData._MainChallengeLoop_d__16;
 using StoryContext = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0;
+
+using Object = UnityEngine.Object;
 
 namespace Mystia.Modding.Bridge;
 
@@ -28,10 +34,12 @@ internal sealed class YuyukoBossMirror : IChallengeBossMirror
 
     private readonly StoryContext _context;
     private readonly nint _contextPointer;
+    private readonly RunLoop _loop;
     private Retake? _retake;
 
-    private YuyukoBossMirror(StoryContext context)
+    private YuyukoBossMirror(RunLoop loop, StoryContext context)
     {
+        _loop = loop;
         _context = context;
         _contextPointer = context.Pointer;
     }
@@ -41,10 +49,10 @@ internal sealed class YuyukoBossMirror : IChallengeBossMirror
     /// so the mirror is cached by it and reused instead of rebuilt on every step; the retake closure is attached
     /// only once that phase exists, which is why it is re-attached on every step.
     /// </summary>
-    internal static YuyukoBossMirror Reached(StoryContext context, Retake? retake)
+    internal static YuyukoBossMirror Reached(RunLoop loop, StoryContext context, Retake? retake)
     {
         if (_current is null || _current._contextPointer != context.Pointer)
-            _current = new YuyukoBossMirror(context);
+            _current = new YuyukoBossMirror(loop, context);
         _current._retake = retake;
         return _current;
     }
@@ -110,6 +118,69 @@ internal sealed class YuyukoBossMirror : IChallengeBossMirror
     {
         get => _context.positiveSpellCount;
         set => _context.positiveSpellCount = value;
+    }
+
+    /// <summary>
+    /// Stops the run the way the game's own failure does before its story: the main loop is stopped and so are
+    /// the three routines it yielded (a routine the loop is waiting on is not reachable through the loop's own
+    /// frame, which is why each is stopped by name), and the retake's buff goes with them - its cooker locks stop
+    /// and the effects it spawned are destroyed.
+    /// </summary>
+    public void StopRun()
+    {
+        if (_context.eventManager is not { } events)
+            return;
+
+        events.StopCoroutine(_loop.Cast<Il2CppSystem.Collections.IEnumerator>());
+        Stop(events, _loop._mainLoop_5__6);
+        Stop(events, _loop._negativeSpellLoop_5__7);
+        Stop(events, _loop._standSpawnLoop_5__9);
+
+        if (_retake is not { } retake)
+            return;
+
+        foreach (var coroutine in retake.lockCookerCorotine.ToArray())
+            if (coroutine is not null)
+                events.StopCoroutine(coroutine);
+        foreach (var effect in retake.eatingGameObejct.ToArray())
+            if (effect is not null)
+                Object.Destroy(effect);
+    }
+
+    /// <summary>
+    /// Carries the run's failure out: what the run registered with the scene is cleaned up and the game's own
+    /// failure story is started. Only the callbacks this run's closure registered are removed, so the rest of the
+    /// night's observers survive, and the story is started the way the game starts it.
+    /// </summary>
+    public void ReplayFailure()
+    {
+        if (_context.eventManager is not { } events || _context.guestsManager is not { } guests)
+            return;
+
+        if (guests.OnPositiveSpellTriggered is not null)
+            foreach (var callback in guests.OnPositiveSpellTriggered.GetInvocationList())
+                if (callback.Target?.Pointer == _contextPointer)
+                    guests.OnPositiveSpellTriggered -= callback.Cast<Il2CppSystem.Action<SpecialGuestsController>>();
+        if (_context.statusDisplayer is not null && events.OnFundUpdateCallback is not null)
+            foreach (var callback in events.OnFundUpdateCallback.GetInvocationList())
+                if (callback.Target?.Pointer == _context.statusDisplayer?.Pointer)
+                    events.remove_OnFundUpdateCallback(callback.Cast<Il2CppSystem.Action<int>>());
+
+        if (_context.statusDisplayer is not null)
+            _context.statusDisplayer.gameObject.SetActive(false);
+        if (_context.yuyuko is { } boss && boss.AllOrdersCount > 0)
+            guests.CleanOrderInfo(boss);
+        foreach (var guest in guests.AllGuestInDeskController.ToArray())
+            guest.SetGuestCannotOrder();
+
+        var failure = new OnFailLoop(0) { __4__this = _context };
+        events.StartCoroutine(failure.Cast<Il2CppSystem.Collections.IEnumerator>());
+    }
+
+    private static void Stop(EventManager events, Coroutine? routine)
+    {
+        if (routine is not null)
+            events.StopCoroutine(routine);
     }
 }
 

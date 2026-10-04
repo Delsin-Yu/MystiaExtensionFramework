@@ -139,7 +139,7 @@ internal static class ChallengeRunSeams
                 displayer is null ? nint.Zero : displayer.Pointer,
                 new MirrorVector3(context.yuyukoSeatPostion));
             timeline.AttachPhaseLength(loop.__4__this?.singleRoundDuration ?? 0);
-            timeline.AttachBossMirror(YuyukoBossMirror.Reached(context, loop.__8__3));
+            timeline.AttachBossMirror(YuyukoBossMirror.Reached(loop, context, loop.__8__3));
             // The game's own lookup named the boss already; the run's closure names the very same group, so it
             // is only the fallback for a build whose lookup label moved.
             if (timeline.Boss == default && context.yuyuko is not null)

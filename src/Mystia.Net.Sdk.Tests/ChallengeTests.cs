@@ -551,6 +551,65 @@ public sealed class ChallengeTests : IDisposable
     }
 
     [Fact]
+    public void AStoppedRunIsHandedToTheMirrorAndItsFailureReplayedOnce()
+    {
+        var mirror = new FakeBossMirror();
+        StartRun();
+        Timeline.AttachBossMirror(mirror);
+        Timeline.DisplayedPhase(1, ChallengePhase.One);
+        Timeline.StartClock(60f);
+
+        Timeline.StopRun();
+
+        // The run's loop and its buff are the engine side's to stop; the phase and its clock are gone here.
+        Assert.Equal(1, mirror.StopCalls);
+        Assert.Equal(ChallengePhase.None, Timeline.Phase);
+        Assert.Equal(default, Timeline.Clock);
+        // The stopped run still owns the scene, so nothing is reported to the listeners as its end.
+        Assert.True(Timeline.Running);
+        Assert.False(Timeline.MayLeaveScene());
+
+        // A second stop changes nothing: there is one buff to take back.
+        Timeline.StopRun();
+        Assert.Equal(1, mirror.StopCalls);
+        Assert.Equal(0, mirror.ReplayCalls);
+
+        Timeline.ReplayFailure();
+
+        Assert.Equal(1, mirror.ReplayCalls);
+        // The failure ends the run, and with it the framework's hold on the scene.
+        Assert.False(Timeline.Running);
+    }
+
+    [Fact]
+    public void TheFailureOfAStoppedRunIsNotReplayedAfterTheNextRunStarted()
+    {
+        var mirror = new FakeBossMirror();
+        StartRun();
+        Timeline.AttachBossMirror(mirror);
+        Timeline.StopRun();
+
+        // A new run replaces the stopped one, so the failure it owed is gone with it.
+        StartRun();
+        Timeline.ReplayFailure();
+
+        Assert.Equal(0, mirror.ReplayCalls);
+    }
+
+    [Fact]
+    public void ReplayingAFailureWithoutAStoppedRunDoesNothing()
+    {
+        var mirror = new FakeBossMirror();
+        StartRun();
+        Timeline.AttachBossMirror(mirror);
+
+        Timeline.ReplayFailure();
+
+        Assert.Equal(0, mirror.ReplayCalls);
+        Assert.True(Timeline.Running);
+    }
+
+    [Fact]
     public void TheBossHandleFollowsTheRunsLookup()
     {
         StartRun();
@@ -1190,6 +1249,14 @@ public sealed class ChallengeTests : IDisposable
                 Swallowed.Add(cookerIndex);
             return SwallowResult;
         }
+
+        internal int StopCalls;
+
+        internal int ReplayCalls;
+
+        public void StopRun() => StopCalls++;
+
+        public void ReplayFailure() => ReplayCalls++;
 
         public int EarnedFund { get; set; }
 

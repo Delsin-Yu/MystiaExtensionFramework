@@ -21,6 +21,10 @@ internal sealed class UnityAssetFactory : IAssetFactory
 {
     internal static readonly UnityAssetFactory Shared = new();
 
+    // A decoded picture is still a picture when a chunk's CRC does not match: the decoder reports it instead of
+    // refusing the file, and the report goes to the bridge trace, where a mod that shipped the file can see it.
+    static UnityAssetFactory() => PngImage.Warning = GameBridgeHook.Trace;
+
     // A pixel buffer keeps four floats per pixel, four times what the RGBA32 texture it stands for costs, so
     // the ceiling is on the buffer rather than on the texture. 2048×2048 is far past what the game's own
     // pixel art needs and keeps a mod's typo from asking for hundreds of megabytes.

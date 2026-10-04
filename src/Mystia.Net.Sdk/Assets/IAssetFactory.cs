@@ -31,9 +31,11 @@ public interface IAssetFactory
     /// mod still draws with.
     /// <para>
     /// The decode is the framework's own — the engine's image module is not part of the interop set this
-    /// framework is built against — and it reads the PNGs art is written as: 8 bit grey and truecolour, with
-    /// or without an alpha channel, and indexed images at 1, 2, 4 or 8 bits per pixel. No interlaced image
-    /// and no other encoding: a JPEG is refused.
+    /// framework is built against — and it reads the PNGs art is written as: grey, truecolour, indexed and
+    /// grey or truecolour with an alpha channel, at 1, 2, 4, 8 or 16 bits per sample, with the palette and
+    /// with the transparency a <c>tRNS</c> chunk adds, interlaced (Adam7) included. No other encoding: a JPEG
+    /// is refused, and no picture past 4096×4096 is read. What it cannot read comes back as false, and a chunk
+    /// whose CRC does not match is only reported.
     /// </para>
     /// </summary>
     /// <param name="encodedImage">The bytes of the file. Empty bytes are refused.</param>

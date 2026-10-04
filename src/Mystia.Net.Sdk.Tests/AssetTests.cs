@@ -300,8 +300,8 @@ public sealed class AssetTests
         Assert.False(PngImage.TryDecode(Png(1, 1, 3, [0, 1]), out _));                      // indexed without a palette
         Assert.False(PngImage.TryDecode(Png(1, 1, 3, [0, 1], palette: [1, 2]), out _));     // a palette that is not triples
         Assert.False(PngImage.TryDecode(Png(1, 1, 3, [0, 1], depth: 16, palette: [1, 2, 3]), out _));
-        Assert.False(PngImage.TryDecode(Png(1, 1, 6, [0, 1], interlaced: true), out _));    // interlaced
-        Assert.False(PngImage.TryDecode(Png(1, 1, 6, [0, 1], depth: 16), out _));           // not 8 bit
+        Assert.False(PngImage.TryDecode(Png(1, 1, 0, [0, 1], depth: 3), out _));            // no such bit depth
+        Assert.False(PngImage.TryDecode(Png(1, 1, 2, [0, 1], depth: 4), out _));            // truecolour at four bits
         Assert.False(PngImage.TryDecode(Png(0, 1, 6, [0]), out _));                         // no pixels
         Assert.False(PngImage.TryDecode(Png(1, 1, 6, [0, 1], filter: 9), out _));           // no such filter
         Assert.False(PngImage.TryDecode(Truncated(Png(1, 1, 6, [0, 1, 2, 3]), 40), out _)); // cut short
@@ -359,14 +359,12 @@ public sealed class AssetTests
     }
 
     // A PNG built the way a writer builds one: the signature, the header, the palette when there is one, one
-    // deflated data chunk and the end marker. The decoder does not read the CRCs, so the chunk writer leaves
-    // them empty.
+    // deflated data chunk and the end marker, every chunk carrying the CRC of its own type and payload.
     private static byte[] Png(
         int width,
         int height,
         byte colorType,
         byte[] scanlines,
-        bool interlaced = false,
         byte depth = 8,
         byte? filter = null,
         byte[]? palette = null)
@@ -379,7 +377,6 @@ public sealed class AssetTests
         BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), height);
         header[8] = depth;
         header[9] = colorType;
-        header[12] = interlaced ? (byte)1 : (byte)0;
 
         using var png = new MemoryStream();
         png.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
@@ -393,12 +390,15 @@ public sealed class AssetTests
 
     private static void Chunk(Stream png, string kind, byte[] payload)
     {
-        Span<byte> length = stackalloc byte[4];
-        BinaryPrimitives.WriteInt32BigEndian(length, payload.Length);
-        png.Write(length);
-        png.Write(System.Text.Encoding.ASCII.GetBytes(kind));
+        Span<byte> number = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32BigEndian(number, payload.Length);
+        png.Write(number);
+
+        var type = System.Text.Encoding.ASCII.GetBytes(kind);
+        png.Write(type);
         png.Write(payload);
-        png.Write(new byte[4]);
+        BinaryPrimitives.WriteUInt32BigEndian(number, PngCrc32.Compute(type, payload));
+        png.Write(number);
     }
 
     private static byte[] Deflate(byte[] raw)

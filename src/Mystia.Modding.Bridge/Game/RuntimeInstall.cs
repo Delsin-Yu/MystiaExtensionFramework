@@ -118,6 +118,9 @@ internal sealed class MainThreadPump : UnityEngine.MonoBehaviour
     private void Update()
     {
         BridgeInstaller.MainThread?.Drain();
+        // The one publish point of IClock.Now: this pump already runs on the main thread every frame, so the
+        // unscaled time is read here rather than by the readers, which may be on any thread.
+        HostClock.Publish(UnityEngine.Time.unscaledTime);
         CoroutinePump.Tick(UnityEngine.Time.deltaTime);
         GlobalHost.Tick(UnityEngine.Time.deltaTime);
         SceneLoopHost.Tick(UnityEngine.Time.deltaTime);

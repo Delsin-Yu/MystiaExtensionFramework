@@ -61,6 +61,37 @@ internal static class ChatMenuOrigins
 }
 
 /// <summary>
+/// Marks the <c>UIManager.OpenAfterChatMenu</c> call that comes from a menu a mod opened itself
+/// (<see cref="ChatSelectionServices.Open"/>), so the append pipeline leaves that menu alone: it carries exactly
+/// the entries it was given, and adding the entries of <c>IChatMenuProvider</c> to it would show them twice — the
+/// mod that opens such a menu is usually the one that provides entries for the game's own.
+/// <para>
+/// The public call builds its menu synchronously up to its first await, so the patch that runs it sees the mark.
+/// </para>
+/// </summary>
+internal static class ModChatMenuOpenings
+{
+    [ThreadStatic]
+    private static bool _opening;
+
+    internal static bool Opening => _opening;
+
+    internal static void Run(Action open)
+    {
+        var previous = _opening;
+        _opening = true;
+        try
+        {
+            open();
+        }
+        finally
+        {
+            _opening = previous;
+        }
+    }
+}
+
+/// <summary>
 /// Appends mod supplied entries to the general chat menu.
 /// <para>
 /// The game builds that menu from a <c>GetSelectionConfigurationCallback[]</c> and appends its own end button
@@ -94,6 +125,11 @@ internal static class ChatMenuPipeline
             ref Il2CppReferenceArray<DaySceneChatSelectionPannel.GetSelectionConfigurationCallback> configurationCallbacks
         )
         {
+            // A mod's own menu is nobody's to append to, and the origin that is waiting belongs to the game's next
+            // menu rather than to this one, so it is left where it is.
+            if (ModChatMenuOpenings.Opening)
+                return;
+
             var context = new ChatMenuContext(ChatMenuOrigins.Take(), null, CharacterKind.Special, -1, false);
             try
             {
@@ -120,20 +156,21 @@ internal static class ChatMenuPipeline
 
         var original = callbacks;
         var count = original?.Length ?? 0;
+        var resolved = ChatMenuSelections.Resolve(entries);
         var combined = new Il2CppReferenceArray<DaySceneChatSelectionPannel.GetSelectionConfigurationCallback>(
-            count + entries.Count
+            count + resolved.Length
         );
         for (var i = 0; i < count; i++)
             combined[i] = original![i];
-        for (var i = 0; i < entries.Count; i++)
-            combined[count + i] = Callback(entries[i]);
+        for (var i = 0; i < resolved.Length; i++)
+            combined[count + i] = Callback(resolved[i]);
         callbacks = combined;
     }
 
-    // One game callback per entry. The callback is invoked once per menu build (twice per entry: the panel
-    // asks for the whole configuration and then again for the title), so the label and the availability are
-    // captured as values and the action is converted to the game's delegate only when the entry is picked.
-    private static DaySceneChatSelectionPannel.GetSelectionConfigurationCallback Callback(ChatMenuEntry entry) =>
+    // One game callback per entry. The entry is resolved once, here, into the title and the availability the panel
+    // asks this callback for - through the same step a menu a mod opens itself resolves its entries with - and the
+    // action becomes the game's delegate only when the entry is picked.
+    private static DaySceneChatSelectionPannel.GetSelectionConfigurationCallback Callback(ChatMenuSelection selection) =>
         ChatMenuCallbacks.Create(
             (
                 DaySceneChatSelectionPannel.BaseInteractData? interactData,
@@ -142,11 +179,11 @@ internal static class ChatMenuPipeline
                 out Il2CppSystem.Action? onInteract
             ) =>
             {
-                title = entry.Label;
-                availability = entry.Available;
-                onInteract = entry.OnSelected is null
+                title = selection.Title;
+                availability = selection.Available;
+                onInteract = selection.OnSelected is null
                     ? null
-                    : DelegateSupport.ConvertDelegate<Il2CppSystem.Action>(entry.OnSelected);
+                    : DelegateSupport.ConvertDelegate<Il2CppSystem.Action>(selection.OnSelected);
             }
         );
 }

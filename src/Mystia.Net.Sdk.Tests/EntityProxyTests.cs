@@ -258,6 +258,11 @@ public sealed class EntityProxyTests
                      typeof(IPortraitProvider),
                      typeof(IChatConfirmationListener),
                      typeof(ChatConfirmationView),
+                     typeof(IDayInputListener),
+                     typeof(DayCharacter),
+                     typeof(IClock),
+                     typeof(IInputServices),
+                     typeof(MystiaKey),
                  })
         {
             foreach (var named in TypesNamedBy(type))

@@ -19,6 +19,7 @@ using NightScene.CookingUtility;
 using NightScene.GuestManagementUtility;
 using PrepNightScene.UI;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace Mystia.Modding.Bridge;
 
@@ -52,7 +53,14 @@ internal sealed class CommonServices : ICommonServices
     // The process dispatcher: a mod's routines are not owned by a scene, so they outlive a scene change.
     public ICoroutineDispatcher Coroutines => CoroutineScheduler.Global;
 
+    // The clock is the one capability a background thread may read, so its value is published by the main
+    // thread pump every frame instead of being read from the engine on demand.
+    public IClock Clock => HostClock.Shared;
+
     public IPlatformInfo Platform => PlatformInfo.Shared;
+
+    // The engine's input state is main thread only, which is where a loop polls it.
+    public IInputServices Input => KeyboardServices.Shared;
 
     public void LoadScene(Scene scene)
     {
@@ -115,10 +123,41 @@ internal sealed class CommonServices : ICommonServices
         UniversalGameManager.UpdatePlayerInputAvailability(enabled);
     }
 
+    // The game never writes this switch, so the property is the only owner of it. Without an event system
+    // present (outside a UI built scene, in a test host) reading answers the engine's own default and writing
+    // has no target, which is not an error.
+    public bool UiNavigationEnabled
+    {
+        get => EventSystem.current is not { } system || system.sendNavigationEvents;
+        set
+        {
+            if (EventSystem.current is { } system)
+                system.sendNavigationEvents = value;
+        }
+    }
+
+    // Only a browser URL is handed to the OS: anything else could run a local path or a scheme the platform
+    // resolves to something the mod did not mean.
+    public void OpenUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+            || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new ArgumentException("Only an absolute http or https URL can be opened.", nameof(url));
+        }
+
+        Application.OpenURL(url);
+    }
+
     public void SetNightTransitionEnabled(bool enabled)
     {
         StockGate.TransitionDialog = enabled;
     }
+
+    // The chat selection panel is the day scene's, but the game invokes a menu entry's action outside every scene
+    // loop window, and opening the next menu is exactly what such an action does, so the panel sits with the
+    // always available capabilities instead of behind a scene.
+    public IChatSelectionServices ChatSelection => ChatSelectionServices.Shared;
 
     // The language tables are global data, not scene state, so these two read them without the scene scope.
     public string FoodTagText(int tagId) => DataBaseLanguage.GetFoodTag(tagId);

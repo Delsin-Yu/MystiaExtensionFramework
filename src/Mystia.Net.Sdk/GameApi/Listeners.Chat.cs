@@ -60,15 +60,55 @@ public readonly record struct ChatMenuContext(
     bool IsMerchant);
 
 /// <summary>
-/// One mod supplied chat menu entry. <c>OnSelected</c> runs when the player picks the entry; it is invoked
-/// outside the menu build, so it must not touch the menu it came from.
+/// The mark the game draws in front of a chat menu entry — the same marks the game's own entries carry. The
+/// panel parses the mark out of an entry's title, so a mod entry names it here and the framework encodes it.
 /// </summary>
-public readonly record struct ChatMenuEntry(string Label, bool Available, Action OnSelected);
+public enum ChatMenuIcon
+{
+    /// <summary>No mark; the entry shows its label alone.</summary>
+    None,
+
+    Event,
+
+    Mission,
+
+    Merchant,
+
+    /// <summary>The mark of an entry that can be delivered to; the game's own shops use it for goods.</summary>
+    CanDeliver,
+
+    /// <summary>The notebook tutorial markers of the Kyouko storyline.</summary>
+    KyoukouTutorial,
+
+    /// <summary>The second, newer class of the Kyouko storyline's tutorial markers.</summary>
+    KyoukouTutorialNew,
+}
+
+/// <summary>
+/// One mod supplied chat menu entry: what the game shows, whether the player may pick it, and what picking it
+/// runs. It is the entry shape of both menus a mod reaches — the ones the game opens, where
+/// <c>IChatMenuProvider</c> appends it, and the ones a mod opens itself through
+/// <c>Mystia.Scenes.IChatSelectionServices</c>.
+/// <para>
+/// <c>OnSelected</c> runs when the player picks the entry; it is invoked outside the menu build, so it must not
+/// touch the menu it came from. Closing that menu is <c>Mystia.Scenes.IChatSelectionServices.Close</c>, which an
+/// entry uses before it opens the next menu or a dialog, exactly as the game's own entries do.
+/// </para>
+/// </summary>
+public readonly record struct ChatMenuEntry(
+    string Label,
+    bool Available,
+    Action OnSelected,
+    ChatMenuIcon Icon = ChatMenuIcon.None);
 
 [AutoWire]
 public interface IChatMenuProvider
 {
-    /// <summary>Append mod entries for this menu; entries are kept in the order they were added.</summary>
+    /// <summary>
+    /// Append mod entries for this menu; entries are kept in the order they were added. It is only asked about the
+    /// menus the game opens: a menu a mod opens through <c>Mystia.Scenes.IChatSelectionServices</c> carries exactly
+    /// the entries it was given.
+    /// </summary>
     void ProvideChatMenuEntries(in ChatMenuContext context, IList<ChatMenuEntry> entries) { }
 }
 

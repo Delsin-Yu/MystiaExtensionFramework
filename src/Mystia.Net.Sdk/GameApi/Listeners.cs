@@ -17,6 +17,7 @@ using Mystia;
 using Mystia.Assets;
 using Mystia.Scenes;
 
+using NumericsVector2 = Mystia.Numerics.Vector2;
 using NumericsVector3 = Mystia.Numerics.Vector3;
 
 namespace Mystia.Listeners;
@@ -35,12 +36,24 @@ public interface IDayListener
     void OnSceneChanging(Scene scene) { }
 }
 
+/// <summary>
+/// The identity of one character the day scene hands to <see cref="IDayInputListener"/>. A mod reads
+/// <see cref="Name"/> to tell characters apart and never names the engine's own controller type.
+/// </summary>
+/// <param name="Name">The name of the scene object the character belongs to, as the game gives it.</param>
+/// <param name="IsLocalPlayer">
+/// Whether this is the character the local player drives. The framework answers it against the game's own
+/// character collection, so a mod does not have to know how the game spells "Self". It is false when that
+/// collection does not answer either, e.g. outside the day scene.
+/// </param>
+public readonly record struct DayCharacter(string Name, bool IsLocalPlayer);
+
 [AutoWire]
 public interface IDayInputListener
 {
-    void OnCharacterReady(CharacterControllerUnit unit) { }
+    void OnCharacterReady(in DayCharacter unit) { }
 
-    void OnMoveInput(CharacterControllerUnit unit, Vector2 direction) { }
+    void OnMoveInput(in DayCharacter unit, NumericsVector2 direction) { }
 
     void OnSprintStarted() { }
 

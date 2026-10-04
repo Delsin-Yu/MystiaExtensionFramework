@@ -392,7 +392,7 @@ internal static class DayInputSeams
     private static class Ready
     {
         private static void Postfix(CharacterControllerUnit __instance) =>
-            Dispatch.Run<IDayInputListener>(listener => listener.OnCharacterReady(__instance));
+            DayInputPipeline.CharacterReady(DayInputPipeline.Describe(__instance));
     }
 
     [HarmonyPatch(typeof(DayScenePlayerInputGenerator), nameof(DayScenePlayerInputGenerator.OnSprintPerformed))]

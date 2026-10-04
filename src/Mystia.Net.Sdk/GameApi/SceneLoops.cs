@@ -26,8 +26,21 @@ public interface ICommonServices
     /// </summary>
     ICoroutineDispatcher Coroutines { get; }
 
+    /// <summary>
+    /// The monotonic, unscaled clock. A loop's <c>delta</c> is scaled game time, so it is zero while the game
+    /// is paused; this is the real elapsed time a mod needs for a log timestamp, a timeout or the age of a
+    /// fade. It is the one member here a background thread may read.
+    /// </summary>
+    IClock Clock { get; }
+
     /// <summary>The platform (store front) keys the host resolved at startup.</summary>
     IPlatformInfo Platform { get; }
+
+    /// <summary>
+    /// The keyboard, as a mod polls it for its own global hotkeys. It reports the frame being processed, so it
+    /// is main thread only, exactly like every other engine touch here.
+    /// </summary>
+    IInputServices Input { get; }
 
     IDialogCatalog Dialogs { get; }
 
@@ -72,7 +85,34 @@ public interface ICommonServices
 
     void SetInputEnabled(bool enabled);
 
+    /// <summary>
+    /// Whether the game's UI navigation events reach the event system. The game never writes this itself, so
+    /// it stays on; a mod turns it off while it owns the screen — an open console, say — so the game's own
+    /// panels stop reacting to the keys the mod's UI is reading.
+    /// <para>
+    /// Reading it with no event system present answers true, the engine's own default, and writing it then
+    /// does nothing.
+    /// </para>
+    /// </summary>
+    bool UiNavigationEnabled { get; set; }
+
     void SetNightTransitionEnabled(bool enabled);
+
+    /// <summary>
+    /// Opens <paramref name="url"/> in the player's browser. Only an absolute http or https URL is accepted:
+    /// anything else — a local path, or a scheme the platform may have no handler for — is refused rather than
+    /// handed to the operating system.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="url"/> is not an absolute http or https URL.</exception>
+    void OpenUrl(string url);
+
+    /// <summary>
+    /// The day scene's chat selection panel, as an action a mod initiates: it opens a menu of mod entries, and it
+    /// closes the menu the player is in. It is here and not on a scene because a menu entry's action runs outside
+    /// every scene loop window; the panel it drives is the day scene's, which is what a call outside that scene is
+    /// refused for.
+    /// </summary>
+    IChatSelectionServices ChatSelection => throw new NotSupportedException();
 
     /// <summary>Display text of a food tag id.</summary>
     string FoodTagText(int tagId) => throw new NotSupportedException();

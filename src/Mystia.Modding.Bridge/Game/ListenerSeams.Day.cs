@@ -30,7 +30,9 @@ internal static class DayInputListenerSeams
             Common.CharacterUtility.CharacterControllerInputGeneratorComponent __instance,
             Vector2 inputDirection
         ) =>
-            Dispatch.Run<IDayInputListener>(listener => listener.OnMoveInput(__instance.Character, inputDirection));
+            DayInputPipeline.Move(
+                DayInputPipeline.Describe(__instance.Character),
+                new Mystia.Numerics.Vector2(inputDirection));
     }
 }
 

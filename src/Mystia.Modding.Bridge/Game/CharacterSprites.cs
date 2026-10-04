@@ -111,6 +111,55 @@ internal static class CharacterSprites
     }
 
     /// <summary>
+    /// The copy of a set the game holds, with only the flags <paramref name="style"/> states replaced. Every
+    /// other field travels with the copy - the frames, the trims, and the values the game's own
+    /// <c>Initialize</c> never takes - which is what makes a copy exact where a set built from frames has to
+    /// invent those values. The engine's own copy is the one used, so a copy is the same kind of set the source
+    /// was (the layered one stays layered).
+    /// </summary>
+    internal static bool TryCopy(object set, CharacterSpriteSetStyle style, out CharacterSpriteSetHandle? copy)
+    {
+        copy = null;
+        if (set is not CharacterSpriteSetCompact source || source is null)
+            return false;
+        if (!Finite(style))
+            return false;
+
+        CharacterSpriteSetCompact? made = null;
+        try
+        {
+            made = UnityEngine.Object.Instantiate(source);
+            if (style.DoNotUseEyeSprite is { } noEyes)
+                made.doNotUseEyeSprite = noEyes;
+            if (style.HasPrebakedShadow is { } shadow)
+                made.hasPrebakedShadow = shadow;
+            if (style.AnimationSpeedMultiplier is { } animation)
+                made.animSpeedMultiplier = animation;
+            if (style.ExtraYOffset is { } offset)
+                made.extraYOffset = offset;
+            if (style.MoveSpeedMultiplier is { } speed)
+                made.moveSpeedMultiplier = speed;
+            if (style.IsHina is { } spins)
+                made.isHina = spins;
+            if (style.RotatePerTime is { } rotation)
+                made.rotatePerTime = rotation;
+            if (style.DoNotHaveStepVFX is { } steps)
+                made.doNotHaveStepVFX = steps;
+
+            copy = new UnityCharacterSpriteSetHandle(made);
+            return true;
+        }
+        catch (Exception error)
+        {
+            GameBridgeHook.Trace($"CharacterSprites: the pixel sprite set could not be copied: {error.GetBaseException().Message}");
+            if (made is not null)
+                UnityEngine.Object.DestroyImmediate(made);
+            copy = null;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// The frames and the style of a set the game holds, as a mod would hand them to <see cref="TryCreate"/>:
     /// the game's own fallback art of either kind, or one the game loaded for a skin. False when the object is
     /// not one of the game's sets, or when its frames are not the whole grid the animator indexes - the frames
@@ -118,7 +167,8 @@ internal static class CharacterSprites
     /// <para>
     /// What it does not carry is the set's own trims: those are part of what a rebuilt set takes from the game's
     /// fallback pixel art, exactly as a set a mod builds does, so a caller that reads a skin apart gets that
-    /// skin's frames and flags and the game's own trimming.
+    /// skin's frames and flags and the game's own trimming. A caller that wants the set as it is copies it with
+    /// <see cref="TryCopy"/> instead.
     /// </para>
     /// </summary>
     internal static bool TryUnwrap(

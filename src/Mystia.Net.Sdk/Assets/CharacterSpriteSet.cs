@@ -61,10 +61,11 @@ public readonly record struct CharacterSpriteSetFrames(
 
 /// <summary>
 /// How a character pixel sprite set behaves, which is the half of the game's asset that is not its frames.
-/// Every member is optional, and a member left unset keeps the value the game's own fallback pixel set carries,
-/// so a mod that only has art hands over <see cref="CharacterSpriteSetFrames"/> and nothing else — the defaults
-/// it would otherwise have to copy out of the game's data by hand. A member that is set changes how the
-/// character moves, not what it looks like.
+/// Every member is optional, and a member left unset keeps the value the set was made from: the game's own
+/// fallback pixel set, for a set a mod builds out of frames, or the copied set's own value for
+/// <c>IAssetFactory.TryCopyCharacterSpriteSet</c>. So a mod that only has art hands over
+/// <see cref="CharacterSpriteSetFrames"/> and nothing else — the defaults it would otherwise have to copy out
+/// of the game's data by hand. A member that is set changes how the character moves, not what it looks like.
 /// <para>
 /// A value that is not finite is refused, because the animator would carry it into the character's transform.
 /// </para>

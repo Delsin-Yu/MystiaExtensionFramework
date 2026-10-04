@@ -43,6 +43,18 @@ public sealed class WrappedGameArtTests
     }
 
     [Fact]
+    public void Copying_a_pixel_set_refuses_an_object_that_is_not_one_of_the_games()
+    {
+        var style = new CharacterSpriteSetStyle { IsHina = true };
+
+        Assert.False(Factory.TryCopyCharacterSpriteSet(null!, style, out var missing));
+        Assert.Null(missing);
+
+        Assert.False(Factory.TryCopyCharacterSpriteSet(new object(), style, out var foreign));
+        Assert.Null(foreign);
+    }
+
+    [Fact]
     public void The_frameworks_own_codecs_are_not_part_of_the_mods_surface()
     {
         // A mod reaches pictures and sound through IAssetFactory; the codecs behind it are the framework's own

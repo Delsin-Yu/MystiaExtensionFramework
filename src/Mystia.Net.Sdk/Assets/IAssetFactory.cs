@@ -109,6 +109,25 @@ public interface IAssetFactory
         [NotNullWhen(true)] out CharacterSpriteSetHandle? set);
 
     /// <summary>
+    /// Copies a character pixel set the game holds — one of its own skins, or the fallback art — with the flags
+    /// <paramref name="style"/> states replacing the ones the set carries. A copy keeps everything else the set
+    /// has, so it is exact in a way a set built from frames is not: the frames, the trims and the values the
+    /// game's own <c>Initialize</c> never takes (where a character sits on the notebook page, how the day scene
+    /// highlights it) all come along. This is how a set the game owns gets a movement flag of a mod's own.
+    /// <para>
+    /// What <paramref name="style"/> leaves unset keeps the copied set's own value, which is where this differs
+    /// from <see cref="TryCreateCharacterSpriteSet"/>: there, an unset member takes the game's fallback value.
+    /// </para>
+    /// </summary>
+    /// <param name="set">The game's own set object, either kind.</param>
+    /// <param name="style">The flags to replace, unset members leaving the copied set's own.</param>
+    /// <param name="copy">The copy, or null when the object was not a set or a value was refused.</param>
+    bool TryCopyCharacterSpriteSet(
+        object set,
+        CharacterSpriteSetStyle style,
+        [NotNullWhen(true)] out CharacterSpriteSetHandle? copy);
+
+    /// <summary>
     /// Builds an audio clip out of already decoded samples. The factory does not decode a container: a WAV
     /// file is decoded by <see cref="WavAudio.TryDecode"/> first, and the three values it reports are exactly
     /// the three this method takes.

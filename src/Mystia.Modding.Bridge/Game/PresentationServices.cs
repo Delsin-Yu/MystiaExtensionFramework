@@ -136,6 +136,23 @@ internal sealed partial class PresentationServices : IPresentationServices
         return new NumericsVector3(position.x, position.y, position.z);
     }
 
+    public bool TryGetGuestPosition(GuestHandle group, out NumericsVector3 position)
+    {
+        ServiceScope.Require();
+        position = default;
+
+        // The group's own first member: the position the game's own spells read when they target a group.
+        if (EntitySeams.GuestOf(group) is not { } native)
+            return false;
+        var instances = native.guestInstances;
+        if (instances is not { Length: > 0 } || instances[0] is null)
+            return false;
+
+        var world = instances[0].transform.position;
+        position = new NumericsVector3(world.x, world.y, world.z);
+        return true;
+    }
+
     // The style an engine label can be built from; anything the engine would mangle is refused before a
     // GameObject is created.
     private static bool Style(FloatingLabelStyle style)

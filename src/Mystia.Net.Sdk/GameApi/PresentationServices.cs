@@ -144,6 +144,14 @@ public interface IPresentationServices
 
     /// <summary>World position of the table of a desk.</summary>
     Vector3 TablePosition(int deskCode) => throw new NotSupportedException();
+
+    /// <summary>
+    /// World position of a guest group's first member — where the game's own effects aim when they target a
+    /// group. It answers false for a group that is not in the scene any more, or whose members are all gone.
+    /// </summary>
+    /// <param name="group">The group whose position is asked for.</param>
+    /// <param name="position">The group's position, when the call answers true.</param>
+    bool TryGetGuestPosition(GuestHandle group, out Vector3 position) => throw new NotSupportedException();
 }
 
 /// <summary>

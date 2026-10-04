@@ -23,7 +23,7 @@ namespace Mystia.Assets;
 /// 8192×8192 pixels in all, far past anything the game's own art or a sprite sheet is.
 /// </para>
 /// </summary>
-public static class PngWriter
+internal static class PngWriter
 {
     private static ReadOnlySpan<byte> Signature => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 

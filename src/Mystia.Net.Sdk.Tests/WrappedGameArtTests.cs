@@ -41,4 +41,15 @@ public sealed class WrappedGameArtTests
         // is refused by TryCreateCharacterSpriteSet instead of building one out of nothing.
         Assert.Null(style.IsHina);
     }
+
+    [Fact]
+    public void The_frameworks_own_codecs_are_not_part_of_the_mods_surface()
+    {
+        // A mod reaches pictures and sound through IAssetFactory; the codecs behind it are the framework's own
+        // code and must not read as API. WavAudio is the one exception: a mod decodes a container itself before
+        // handing the samples to TryCreateAudioClip, which is why it is public and documented as a decoder.
+        foreach (var codec in new[] { typeof(PngImage), typeof(PngWriter), typeof(PngCrc32) })
+            Assert.False(codec.IsPublic, $"{codec.Name} reads as part of the mod's surface.");
+        Assert.True(typeof(WavAudio).IsPublic);
+    }
 }

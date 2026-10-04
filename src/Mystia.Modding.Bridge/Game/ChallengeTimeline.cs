@@ -41,6 +41,16 @@ internal interface IChallengeBossMirror
 
     /// <summary>Eats the cooker at <paramref name="cookerIndex"/> at the cooker layer. False when impossible.</summary>
     bool SwallowCooker(int cookerIndex);
+
+    /// <summary>
+    /// The run's takings so far, as the closure the boss's life lives in keeps them. Reading it is how a mod
+    /// sees what the run's own steps judge by; writing it replaces that value, which a machine judging by
+    /// another machine's numbers needs.
+    /// </summary>
+    int EarnedFund { get; set; }
+
+    /// <summary>The run's positive spell count so far, read and written like <see cref="EarnedFund"/>.</summary>
+    int PositiveSpellCount { get; set; }
 }
 
 /// <summary>
@@ -646,6 +656,28 @@ internal sealed class ChallengeTimeline
     /// </summary>
     internal void ArmNegativeSpell(bool enabled) => _negativeSpellEnabled = enabled;
 
+    /// <summary>The run's takings so far, through the closure the attached mirror holds.</summary>
+    internal int EarnedFund
+    {
+        get => BossMirror?.EarnedFund ?? 0;
+        set
+        {
+            if (BossMirror is { } mirror)
+                mirror.EarnedFund = value;
+        }
+    }
+
+    /// <summary>The run's positive spell count so far, through the closure the attached mirror holds.</summary>
+    internal int PositiveSpellCount
+    {
+        get => BossMirror?.PositiveSpellCount ?? 0;
+        set
+        {
+            if (BossMirror is { } mirror)
+                mirror.PositiveSpellCount = value;
+        }
+    }
+
     /// <summary>
     /// Writes the armed verdict into the retake's order flag again, called from the step that assigns the flag:
     /// the game assigns it at the start of that step, so writing here is what makes the framework's verdict the
@@ -883,6 +915,34 @@ internal sealed class ChallengeServices : IWorkSceneChallengeServices
         {
             ServiceScope.Require();
             ChallengeTimeline.Shared.ArmNegativeSpell(value);
+        }
+    }
+
+    public int EarnedFund
+    {
+        get
+        {
+            ServiceScope.Require();
+            return ChallengeTimeline.Shared.EarnedFund;
+        }
+        set
+        {
+            ServiceScope.Require();
+            ChallengeTimeline.Shared.EarnedFund = value;
+        }
+    }
+
+    public int PositiveSpellCount
+    {
+        get
+        {
+            ServiceScope.Require();
+            return ChallengeTimeline.Shared.PositiveSpellCount;
+        }
+        set
+        {
+            ServiceScope.Require();
+            ChallengeTimeline.Shared.PositiveSpellCount = value;
         }
     }
 

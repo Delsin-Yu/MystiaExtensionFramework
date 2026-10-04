@@ -92,6 +92,7 @@ internal static class ChallengeTargets
         Field("the run's shared closure", typeof(RunLoop), "__8__1");
         Field("the run's retake closure", typeof(RunLoop), "__8__3");
         Field("the boss's life", typeof(StoryContext), "yuyukoTotalLife");
+        Field("the run's positive spell count", typeof(StoryContext), "positiveSpellCount");
         Field("the third phase's panel", typeof(StoryContext), "statusDisplayer");
         Field("the event manager", typeof(StoryContext), "eventManager");
         Field("the boss's order flag", typeof(Retake), "ifYuyukoCouldOrder");

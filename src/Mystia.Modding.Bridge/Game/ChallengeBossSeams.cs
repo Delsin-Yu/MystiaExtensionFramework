@@ -93,6 +93,24 @@ internal sealed class YuyukoBossMirror : IChallengeBossMirror
         cooker.visual?.HideCookerPermanent();
         return true;
     }
+
+    // The run's own numbers live in the same closure, beside the boss's life: the takings are the event
+    // manager's and the spell count the closure's own.
+    public int EarnedFund
+    {
+        get => _context.eventManager?.EarnedFund ?? 0;
+        set
+        {
+            if (_context.eventManager is { } manager)
+                manager.EarnedFund = value;
+        }
+    }
+
+    public int PositiveSpellCount
+    {
+        get => _context.positiveSpellCount;
+        set => _context.positiveSpellCount = value;
+    }
 }
 
 /// <summary>

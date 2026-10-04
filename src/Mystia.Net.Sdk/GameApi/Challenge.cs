@@ -362,6 +362,17 @@ namespace Mystia.Scenes
         }
 
         /// <summary>
+        /// The run's takings so far, as the challenge's own loop keeps them. Reading it is how a mod sees what
+        /// the phase's own steps judge by; writing it replaces that value, which is what a machine that judges
+        /// by another machine's numbers needs. It answers zero before the run's own loop reached the step that
+        /// keeps it.
+        /// </summary>
+        int EarnedFund { get; set; }
+
+        /// <summary>The run's positive spell count so far, read and written like <see cref="EarnedFund"/>.</summary>
+        int PositiveSpellCount { get; set; }
+
+        /// <summary>
         /// Whether the challenge's scene may be left. The framework holds the game's own leave
         /// (<c>NightSceneDirector.TryLeaveSession</c>) while a challenge it owns still runs, so a leave only
         /// passes inside the challenge's exit window - the run ended and the game is on its way out. Inside

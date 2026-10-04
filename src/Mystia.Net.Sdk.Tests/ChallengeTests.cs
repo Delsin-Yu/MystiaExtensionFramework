@@ -1173,6 +1173,10 @@ public sealed class ChallengeTests : IDisposable
                 Swallowed.Add(cookerIndex);
             return SwallowResult;
         }
+
+        public int EarnedFund { get; set; }
+
+        public int PositiveSpellCount { get; set; }
     }
 
     private sealed class Recorder : IChallengeListener

@@ -1,4 +1,4 @@
-using Common.UI;
+﻿using Common.UI;
 using GameData.Profile;
 using Mystia;
 using Mystia.Assets;
@@ -47,6 +47,15 @@ public interface ICommonServices
     IGuestRecords Records { get; }
 
     /// <summary>
+    /// The game's own character operations — placing, walking, creating and removing a character — named by the
+    /// label the game names characters by and by the handle a created one is handed back as. They are here and
+    /// not on a scene services object because the game keeps its character collection and its day scene table
+    /// for the whole process: a console command, a network message handler and a scene loop all reach them the
+    /// same way.
+    /// </summary>
+    ICharacterServices Characters => throw new NotSupportedException();
+
+    /// <summary>
     /// Builds the assets a mod draws, plays and files — textures, sprites, audio clips, pixel buffers — out of
     /// data the mod carries. Every member creates an engine object, so every member is main thread only.
     /// </summary>
@@ -79,6 +88,18 @@ public interface ICommonServices
 
     void OpenDialog(DialogPackage dialog, Action onFinished, Action<Il2CppSystem.Collections.Generic.Dictionary<int, string>>? replaceText);
 
+    /// <summary>
+    /// Interrupts — i.e. fast-forwards — the dialog panel the player is in: the panel stops typing its current
+    /// line, runs the rest of the package and closes itself the way the game's own fast-forward does. It does
+    /// not cancel the dialog and it does not close the panel on its own.
+    /// <para>
+    /// The game's own entry takes an input event callback and ignores it; this member takes none, because there
+    /// is no event behind the call — a mod asks for the fast-forward, not an input.
+    /// </para>
+    /// </summary>
+    /// <returns>True when a dialog panel was on top of the game's panel stack and was told to fast-forward.</returns>
+    bool InterruptDialog() => throw new NotSupportedException();
+
     void FadeIn(Action onFinished);
 
     void FadeOut(Action onFinished);
@@ -97,6 +118,20 @@ public interface ICommonServices
     bool UiNavigationEnabled { get; set; }
 
     void SetNightTransitionEnabled(bool enabled);
+
+
+    /// <summary>
+    /// Whether a story animation is playing right now: the game's own story director is either playing one or
+    /// waiting for its graph to be ready. A mod reads it to tell a scene being played through a timeline — the
+    /// day scene's story events, a cutscene — from ordinary play.
+    /// <para>
+    /// It answers the state of the game's own playable director, not the game's separate "an event is running"
+    /// flag (<c>SceneDirector.IsInEvent</c>), which the game drives from its event bookkeeping instead. It is a
+    /// read of the engine's current frame, so it is main thread only; a mod that needs it elsewhere publishes
+    /// it where its own readers can see it.
+    /// </para>
+    /// </summary>
+    bool IsStoryPlaying => throw new NotSupportedException();
 
     /// <summary>
     /// Opens <paramref name="url"/> in the player's browser. Only an absolute http or https URL is accepted:

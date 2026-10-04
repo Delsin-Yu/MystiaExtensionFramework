@@ -260,6 +260,8 @@ public sealed class EntityProxyTests
                      typeof(ChatConfirmationView),
                      typeof(IDayInputListener),
                      typeof(DayCharacter),
+                     typeof(ICharacterServices),
+                     typeof(CharacterCreateSpec),
                      typeof(IClock),
                      typeof(IInputServices),
                      typeof(MystiaKey),

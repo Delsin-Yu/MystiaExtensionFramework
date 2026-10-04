@@ -71,6 +71,10 @@ internal sealed class CommonServices : ICommonServices
 
     public IGuestRecords Records => GuestRecords.Shared;
 
+    // The game's own character operations: it keeps its scene director and its day scene character table for the
+    // whole process, so they are reached from a global loop, a console command and a scene loop alike.
+    public ICharacterServices Characters => CharacterServices.Shared;
+
     // Both are process wide: the factory builds engine objects a mod then owns, and the locator files them
     // into the one asset pipeline the game itself loads through.
     public IAssetFactory Assets => UnityAssetFactory.Shared;
@@ -152,6 +156,39 @@ internal sealed class CommonServices : ICommonServices
     public void SetNightTransitionEnabled(bool enabled)
     {
         StockGate.TransitionDialog = enabled;
+    }
+
+    // The game's own story director is the object every story animation plays on (the day scene's events, a
+    // cutscene), and "delayed" is a director that was told to play and has not started yet. It is not the
+    // game's separate "an event is running" flag, which its own event bookkeeping drives.
+    public bool IsStoryPlaying
+    {
+        get
+        {
+            var director = Common.SceneDirector.instance?.playableDirector;
+            return director != null
+                && director.state is UnityEngine.Playables.PlayState.Playing or UnityEngine.Playables.PlayState.Delayed;
+        }
+    }
+
+    // The dialog panel on top of the game's own panel stack, if that is what is on top: the game's own interrupt
+    // entry only sets the panel's fast-forward flag, and the input event it takes is never read, so nothing here
+    // builds one.
+    public bool InterruptDialog()
+    {
+        var stacks = DEYU.AdpUISystem.Managers.AdpUIPanelManager.Instance?.m_PanelStack;
+        if (stacks is null || stacks.Count == 0)
+            return false;
+
+        var panels = stacks.Peek();
+        if (panels is null || panels.Count == 0)
+            return false;
+
+        if (panels.Peek()?.ControlledPanel is not Common.DialogUtility.DialogPannel dialog)
+            return false;
+
+        dialog.InterruptDialog(default);
+        return true;
     }
 
     // The chat selection panel is the day scene's, but the game invokes a menu entry's action outside every scene

@@ -29,6 +29,13 @@ internal static class SceneLoopHost
 
     private static SceneId? _active;
 
+    /// <summary>
+    /// The scene whose loop is running, or null when no scene loop was entered. A capability that is always
+    /// available still has to know which scene it is acting on — the running map, for instance — and this is
+    /// where it reads that from.
+    /// </summary>
+    internal static SceneId? Active => _active;
+
     internal static void Enter(SceneId scene)
     {
         if (_active == scene)

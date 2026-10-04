@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Mystia.Listeners;
 using Mystia.Modding.Bridge;
 using Mystia.Numerics;
@@ -118,6 +118,9 @@ public sealed class CommonServicesTests
             typeof(ICommonServices).GetProperty(nameof(ICommonServices.Input))!,
             typeof(ICommonServices).GetProperty(nameof(ICommonServices.UiNavigationEnabled))!,
             typeof(ICommonServices).GetMethod(nameof(ICommonServices.OpenUrl))!,
+            typeof(ICommonServices).GetProperty(nameof(ICommonServices.Characters))!,
+            typeof(ICommonServices).GetProperty(nameof(ICommonServices.IsStoryPlaying))!,
+            typeof(ICommonServices).GetMethod(nameof(ICommonServices.InterruptDialog))!,
         ];
 
         foreach (var member in members)

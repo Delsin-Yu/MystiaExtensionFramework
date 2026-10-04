@@ -319,6 +319,23 @@ public sealed class ChallengeTests : IDisposable
     // ---- the run ------------------------------------------------------------------------------------
 
     [Fact]
+    public void TheRunsOwnPhaseLengthTravelsAndIsDroppedWithItsRun()
+    {
+        Assert.Equal(0f, Timeline.BasePhaseSeconds);
+
+        StartRun();
+        Timeline.AttachPhaseLength(45);
+
+        Assert.Equal(45f, Timeline.BasePhaseSeconds);
+
+        // The length belongs to the run's own data: a run that has not reached its data yet has none, and the
+        // next run starts from its own one rather than this one's.
+        StartRun();
+        Timeline.AttachPhaseLength(0);
+        Assert.Equal(0f, Timeline.BasePhaseSeconds);
+    }
+
+    [Fact]
     public void APanelOfAnotherChallengeIsNotThisRunsStatusDisplayer()
     {
         StartRun();

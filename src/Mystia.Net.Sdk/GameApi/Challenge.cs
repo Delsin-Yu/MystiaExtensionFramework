@@ -315,6 +315,13 @@ namespace Mystia.Scenes
         ChallengeClockHandle Clock { get; }
 
         /// <summary>
+        /// The length the challenge's own data gives one phase: the number every phase's clock starts from,
+        /// before <see cref="SetPhaseSeconds"/> replaced it and before the run's own story extended it. It is what
+        /// a mod scales when it wants a phase longer. Zero before the run reached its data.
+        /// </summary>
+        float BasePhaseSeconds { get; }
+
+        /// <summary>
         /// Replaces the length of a phase's clock before that clock starts, which is how a mod stretches a
         /// phase. The game keeps one phase length for the whole challenge, so the change a phase starts with is
         /// the length every later phase inherits. Returns false when that phase's clock already ran in this

@@ -115,6 +115,9 @@ internal sealed class ChallengeTimeline
 
     internal ChallengeClockHandle Clock => _clockRunning ? _clock : default;
 
+    /// <summary>The length the challenge's own data gives one phase; zero until the run reached that data.</summary>
+    internal float BasePhaseSeconds { get; private set; }
+
     /// <summary>The engine side of the boss mirror; null until the run's own closure was reached.</summary>
     internal IChallengeBossMirror? BossMirror;
 
@@ -245,6 +248,18 @@ internal sealed class ChallengeTimeline
     }
 
     /// <summary>
+    /// The length the run's own data gives one phase, which is what <c>SetPhaseSeconds</c> replaces and what a
+    /// mod scales when it wants a phase longer. Read from the run's data on every step, so it is zero until the
+    /// loop reached it.
+    /// </summary>
+    internal void AttachPhaseLength(int seconds)
+    {
+        if (!_running || seconds <= 0)
+            return;
+        BasePhaseSeconds = seconds;
+    }
+
+    /// <summary>
     /// A phase's status displayer was filled in: the challenge's own panel announces its phases with the same
     /// three values, and the first panel a run fills in is the panel of that run.
     /// </summary>
@@ -273,6 +288,7 @@ internal sealed class ChallengeTimeline
         _kind = ChallengeRunKind.Story;
         _displayer = 0;
         _spawnPosition = default;
+        BasePhaseSeconds = 0f;
         _boss = 0;
         _bossHandle = default;
         _groups.Clear();
@@ -837,6 +853,15 @@ internal sealed class ChallengeServices : IWorkSceneChallengeServices
         {
             ServiceScope.Require();
             return ChallengeTimeline.Shared.Clock;
+        }
+    }
+
+    public float BasePhaseSeconds
+    {
+        get
+        {
+            ServiceScope.Require();
+            return ChallengeTimeline.Shared.BasePhaseSeconds;
         }
     }
 

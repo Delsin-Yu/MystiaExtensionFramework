@@ -89,6 +89,8 @@ internal static class ChallengeTargets
             "GameData.Profile.YuyukoBossData+<>c__DisplayClass16_6+<<MainChallengeLoop>g__LockCookersYuyuko|41>d");
 
         Field("the run's retake flag", typeof(RunLoop), "_isRetake_5__2");
+        Field("the run's data", typeof(RunLoop), "__4__this");
+        Field("the challenge data's phase length", typeof(GameData.Profile.YuyukoBossData), "singleRoundDuration");
         Field("the run's shared closure", typeof(RunLoop), "__8__1");
         Field("the run's retake closure", typeof(RunLoop), "__8__3");
         Field("the boss's life", typeof(StoryContext), "yuyukoTotalLife");

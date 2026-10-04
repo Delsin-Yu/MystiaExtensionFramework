@@ -26,6 +26,7 @@ public sealed class AssetTests
     [Theory]
     [InlineData(typeof(IAssetFactory))]
     [InlineData(typeof(IAssetLocator))]
+    [InlineData(typeof(AssetBundleHandle))]
     public void Asset_members_never_name_the_engine(Type contract)
     {
         var framework = contract.Assembly;
@@ -59,6 +60,7 @@ public sealed class AssetTests
                      typeof(IAssetLocator),
                      typeof(SpriteHandle),
                      typeof(AudioClipHandle),
+                     typeof(AssetBundleHandle),
                      typeof(PixelBuffer),
                      typeof(AssetReference),
                      typeof(WavAudio),
@@ -73,6 +75,12 @@ public sealed class AssetTests
         Assert.Equal(
             typeof(TextureHandle),
             typeof(IAssetFactory).GetMethod(nameof(IAssetFactory.TryCreateSolidTexture))!.GetParameters()[1].ParameterType.GetElementType());
+
+        // A bundle is opened from bytes and only ever held as the handle, so the container of prefabs a mod
+        // ships crosses the factory's boundary the same way every other asset does.
+        Assert.Equal(
+            typeof(AssetBundleHandle),
+            typeof(IAssetFactory).GetMethod(nameof(IAssetFactory.TryOpenBundle))!.GetParameters()[1].ParameterType.GetElementType());
     }
 
     /// <summary>
@@ -84,6 +92,57 @@ public sealed class AssetTests
     {
         Assert.Equal(typeof(IAssetFactory), typeof(ICommonServices).GetProperty(nameof(ICommonServices.Assets))!.PropertyType);
         Assert.Equal(typeof(IAssetLocator), typeof(ICommonServices).GetProperty(nameof(ICommonServices.Locator))!.PropertyType);
+    }
+
+    /// <summary>
+    /// Opening a bundle is the factory's entry and it is refusal first: empty bytes are no bundle at all, decided
+    /// before the engine is asked for anything, so this runs outside the game process like every other refusal
+    /// here. (Bytes that are not a bundle are read by the engine and reported by it, which needs the engine.)
+    /// </summary>
+    [Fact]
+    public void Empty_bytes_open_no_bundle()
+    {
+        IAssetFactory factory = UnityAssetFactory.Shared;
+
+        Assert.False(factory.TryOpenBundle(ReadOnlySpan<byte>.Empty, out var bundle));
+        Assert.Null(bundle);
+    }
+
+    /// <summary>
+    /// What a bundle handle answers for, without the engine being there: the prefabs it names are plain strings,
+    /// the name test reads that list (never a load), and a name whose prefab object the handle does not hold — a
+    /// handle that never loaded, or one a test built — is refused by the members that would need it instead of
+    /// being dereferenced.
+    /// </summary>
+    [Fact]
+    public void A_bundle_handle_answers_out_of_the_list_it_read()
+    {
+        var prefabs = new Dictionary<string, UnityEngine.GameObject>(StringComparer.Ordinal) { ["Cirno"] = null! };
+        var bundle = new UnityAssetBundleHandle(["Cirno", "Daiyousei"], prefabs, null!);
+
+        Assert.Equal(new[] { "Cirno", "Daiyousei" }, bundle.PrefabNames);
+        Assert.Equal(2, bundle.PrefabNames.Count);
+
+        // The names are the bundle's own, compared exactly: an empty name is not one a bundle carries, and the
+        // answer is there the moment the handle exists (it is a list lookup, not a load).
+        Assert.True(bundle.ContainsPrefab("Cirno"));
+        Assert.False(bundle.ContainsPrefab("cirno"));
+        Assert.False(bundle.ContainsPrefab("Marisa"));
+        Assert.False(bundle.ContainsPrefab(string.Empty));
+        Assert.False(bundle.ContainsPrefab(null!));
+
+        // Filing needs a key and a prefab object behind the name; the position question needs the object too.
+        Assert.False(bundle.TryRegisterPrefab("vfx/Cirno", "Daiyousei"));
+        Assert.False(bundle.TryRegisterPrefab("vfx/Cirno", "Cirno"));
+        Assert.False(bundle.TryRegisterPrefab(string.Empty, "Cirno"));
+        Assert.False(bundle.TryRegisterPrefab("   ", "Cirno"));
+        Assert.False(bundle.TryRegisterPrefab("vfx/Cirno", null!));
+
+        Assert.False(bundle.TryGetPrefabPosition("Cirno", out var position));
+        Assert.Equal(Vector3.Zero, position);
+        Assert.False(bundle.TryGetPrefabPosition("Daiyousei", out position));
+        Assert.Equal(Vector3.Zero, position);
+        Assert.False(bundle.TryGetPrefabPosition(null!, out position));
     }
 
     /// <summary>

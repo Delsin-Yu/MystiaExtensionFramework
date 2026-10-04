@@ -157,6 +157,172 @@ internal sealed class CharacterServices : ICharacterServices
         return true;
     }
 
+    // ── moving and showing a character a mod drives itself ────────────────────────────────────────────────
+    //
+    // Every member below works on the game's own character unit through the two components the game puts on it:
+    // the body the game moves a character with (CharacterControllerUnit.rb2d, a Rigidbody2D the unit requires)
+    // and the collider it decides against for a character it is told not to collide with (cl2d). The semantics
+    // are the game's own, read out of Common/Character/CharacterControllerUnit.cs:
+    //
+    //  · the game places a character by writing its transform and moves a walking one with
+    //    Rigidbody2D.MovePosition along its input direction; it never drives one by velocity, and it zeroes the
+    //    body's velocity as soon as one stands still (CharacterControllerUnit.FixedUpdate and its IsMoving
+    //    setter, which writes Vector2.zero),
+    //  · the game's own base character prefab ships a kinematic body with no gravity and a frozen rotation, and
+    //    Initialize makes a character dynamic only when it is created with a collider; a character created
+    //    without one has its collider destroyed,
+    //  · the game keeps every character at z 0 and never writes z itself; what orders characters among each other
+    //    is the sorting group and the animator, not z.
+
+    public bool TryBindCharacter(string character, out CharacterHandle? handle)
+    {
+        handle = null;
+        if (string.IsNullOrEmpty(character))
+        {
+            Report("TryBindCharacter", "the character label was empty");
+            return false;
+        }
+
+        // The game's own collection, the one its lookups, its teardown and its day scene table use: the label is
+        // the key a character is filed under for the whole process, which is what WalkCharacter resolves too.
+        var director = SceneDirector.instance;
+        if (director is null || !director.characterCollection.TryGetValue(character, out var unit) || unit is null || unit == null)
+        {
+            Report("TryBindCharacter", $"the running scene files no character as '{character}'");
+            return false;
+        }
+
+        handle = new UnityCharacterHandle(unit);
+        return true;
+    }
+
+    public bool TryGetCharacterPosition(CharacterHandle character, out NumericsVector2 position)
+    {
+        position = default;
+        if (Unit(character) is not { } unit || unit.rb2d == null)
+        {
+            Report("TryGetCharacterPosition", "the handle names no character that is still there");
+            return false;
+        }
+
+        // The body's own position, which is what the game's own mover writes and what a character is drawn from:
+        // interpolation is off on the game's character prefab, so the body and the transform never disagree.
+        var world = unit.rb2d.position;
+        position = new NumericsVector2(world.x, world.y);
+        return true;
+    }
+
+    public bool SetCharacterPosition(CharacterHandle character, NumericsVector2 position)
+    {
+        if (!float.IsFinite(position.X) || !float.IsFinite(position.Y))
+        {
+            Report("SetCharacterPosition", $"({position.X}, {position.Y}) is not a finite position");
+            return false;
+        }
+
+        if (Unit(character) is not { } unit || unit.rb2d == null)
+        {
+            Report("SetCharacterPosition", "the handle names no character that is still there");
+            return false;
+        }
+
+        // The body's position, which is the teleport the engine understands for a body of either kind: a
+        // transform write is what the game itself uses to place a character that is not being moved yet, and it
+        // is the body that has to be told when one is. The depth is left where it is (see SetCharacterZ).
+        unit.rb2d.position = new Vector2(position.X, position.Y);
+        return true;
+    }
+
+    public bool SetCharacterVelocity(CharacterHandle character, NumericsVector2 velocity)
+    {
+        if (!float.IsFinite(velocity.X) || !float.IsFinite(velocity.Y))
+        {
+            Report("SetCharacterVelocity", $"({velocity.X}, {velocity.Y}) is not a finite velocity");
+            return false;
+        }
+
+        if (Unit(character) is not { } unit || unit.rb2d == null)
+        {
+            Report("SetCharacterVelocity", "the handle names no character that is still there");
+            return false;
+        }
+
+        unit.rb2d.velocity = new Vector2(velocity.X, velocity.Y);
+        return true;
+    }
+
+    public bool SetCharacterKinematic(CharacterHandle character, bool kinematic)
+    {
+        if (Unit(character) is not { } unit || unit.rb2d == null)
+        {
+            Report("SetCharacterKinematic", "the handle names no character that is still there");
+            return false;
+        }
+
+        unit.rb2d.isKinematic = kinematic;
+        return true;
+    }
+
+    public bool SetCharacterColliderEnabled(CharacterHandle character, bool enabled)
+    {
+        if (Unit(character) is not { } unit)
+        {
+            Report("SetCharacterColliderEnabled", "the handle names no character that is still there");
+            return false;
+        }
+
+        // A character the game created without a collider has none at all: Initialize destroys it (that is the
+        // state the game's own story characters run in), and the game's own UpdateColliderStatus refuses the
+        // call in the same situation. Nothing is added here that the game decided against.
+        if (unit.cl2d == null)
+        {
+            Report("SetCharacterColliderEnabled", "the character was created without a collider, so there is none to switch");
+            return false;
+        }
+
+        unit.cl2d.enabled = enabled;
+        return true;
+    }
+
+    public bool SetCharacterZ(CharacterHandle character, float z)
+    {
+        if (!float.IsFinite(z))
+        {
+            Report("SetCharacterZ", $"the depth {z} is not a finite number");
+            return false;
+        }
+
+        if (Unit(character) is not { } unit || unit.rb2d == null)
+        {
+            Report("SetCharacterZ", "the handle names no character that is still there");
+            return false;
+        }
+
+        // x and y are kept, exactly like the mod's own SetZ did: a position write of the body would reset them,
+        // and the depth is what a character is taken out of the camera's picture with (a large negative z) or
+        // brought back with (0, the depth the game's own characters sit at).
+        var target = unit.rb2d.transform;
+        var world = target.position;
+        target.position = new Vector3(world.x, world.y, z);
+        return true;
+    }
+
+    /// <summary>
+    /// The game's character behind a handle, or null when the handle names no character that is still there. Two
+    /// ways a handle stops naming one: the reference a caller built it around is missing (a null handle), and the
+    /// game's own object is gone (a scene teardown destroys its characters). The second is why the comparison
+    /// goes through the engine's own operator — a plain null test only sees the first (a destroyed Unity object
+    /// is not a null reference).
+    /// </summary>
+    private static CharacterControllerUnit? Unit(CharacterHandle character)
+    {
+        if (character is not UnityCharacterHandle host)
+            return null;
+
+        var unit = host.Unit;
+        return unit is null || unit == null ? null : unit;
+    }
+
     /// <summary>
     /// The ground height map of the running scene, i.e. the one the game's own player character samples: the day
     /// scene's active map, or the izakaya map of the night being worked. Null when neither is running.

@@ -1,4 +1,5 @@
-﻿using Mystia.Modding.Bridge;
+﻿using Mystia.Assets;
+using Mystia.Modding.Bridge;
 using Mystia.Numerics;
 using Mystia.Scenes;
 using Xunit;
@@ -97,4 +98,100 @@ public sealed class CharacterServicesTests
         Assert.False(characters.WalkCharacter("Cirno", here, -1f));
     }
 
+    /// <summary>
+    /// The motion and hierarchy members are refusals first: a handle that names no character — a null one, or one
+    /// whose game object the scene took — is refused by every one of them before the engine is asked for anything,
+    /// which is what lets a mod poll a character it may have lost and what lets these run with no game at all.
+    /// </summary>
+    [Fact]
+    public void A_character_that_is_not_there_is_refused_by_every_motion_member()
+    {
+        var characters = CharacterServices.Shared;
+        var empty = new UnityCharacterHandle(null!);
+
+        // The untyped entry first: a label that names no character — the empty one is decided before the game is
+        // asked at all — yields no handle, so every member below it inherits the same refusal.
+        Assert.False(characters.TryBindCharacter(string.Empty, out var bound));
+        Assert.Null(bound);
+
+        Assert.False(characters.TryGetCharacterPosition(null!, out var position));
+        Assert.Equal(Vector2.Zero, position);
+        Assert.False(characters.TryGetCharacterPosition(empty, out position));
+        Assert.Equal(Vector2.Zero, position);
+
+        Assert.False(characters.SetCharacterPosition(null!, new Vector2(1f, 2f)));
+        Assert.False(characters.SetCharacterPosition(empty, new Vector2(1f, 2f)));
+        Assert.False(characters.SetCharacterVelocity(null!, new Vector2(1f, 2f)));
+        Assert.False(characters.SetCharacterVelocity(empty, new Vector2(1f, 2f)));
+        Assert.False(characters.SetCharacterKinematic(null!, true));
+        Assert.False(characters.SetCharacterKinematic(empty, true));
+        Assert.False(characters.SetCharacterColliderEnabled(null!, true));
+        Assert.False(characters.SetCharacterColliderEnabled(empty, true));
+        Assert.False(characters.SetCharacterZ(null!, 0f));
+        Assert.False(characters.SetCharacterZ(empty, 0f));
+    }
+
+    /// <summary>
+    /// A number the engine cannot be handed is refused before the character is even looked for, so a mod's own
+    /// arithmetic cannot put a NaN or an infinity into a body's position or velocity, or into the depth of a
+    /// character.
+    /// </summary>
+    [Fact]
+    public void A_value_the_engine_cannot_take_is_refused()
+    {
+        var characters = CharacterServices.Shared;
+        var empty = new UnityCharacterHandle(null!);
+
+        Assert.False(characters.SetCharacterPosition(empty, new Vector2(float.NaN, 0f)));
+        Assert.False(characters.SetCharacterPosition(empty, new Vector2(0f, float.PositiveInfinity)));
+        Assert.False(characters.SetCharacterVelocity(empty, new Vector2(float.NaN, 0f)));
+        Assert.False(characters.SetCharacterVelocity(empty, new Vector2(0f, float.NegativeInfinity)));
+        Assert.False(characters.SetCharacterZ(empty, float.NaN));
+        Assert.False(characters.SetCharacterZ(empty, float.PositiveInfinity));
+    }
+
+    /// <summary>
+    /// The shape the motion members are meant to have: every one of them is named by a character handle — never by
+    /// an engine object a mod could be holding — takes a mirrored value where it takes one, and answers yes or no
+    /// about what it did, so a mod that drives a character has no engine type in its own source at all.
+    /// </summary>
+    [Fact]
+    public void The_motion_members_go_by_handle_and_by_mirrored_values()
+    {
+        var contract = typeof(ICharacterServices);
+        var motions = new[]
+        {
+            nameof(ICharacterServices.TryGetCharacterPosition),
+            nameof(ICharacterServices.SetCharacterPosition),
+            nameof(ICharacterServices.SetCharacterVelocity),
+            nameof(ICharacterServices.SetCharacterKinematic),
+            nameof(ICharacterServices.SetCharacterColliderEnabled),
+            nameof(ICharacterServices.SetCharacterZ),
+        };
+
+        foreach (var name in motions)
+        {
+            var member = contract.GetMethod(name)!;
+
+            Assert.Equal(typeof(CharacterHandle), member.GetParameters()[0].ParameterType);
+            Assert.Equal(typeof(bool), member.ReturnType);
+            Assert.DoesNotContain(
+                member.GetParameters().Select(parameter => parameter.ParameterType),
+                parameter => parameter.Namespace?.StartsWith("UnityEngine", StringComparison.Ordinal) == true);
+        }
+
+        // A position and a velocity travel as the framework's own vector, the read reports one back, and the depth
+        // is the one plain number among them.
+        Assert.Equal(typeof(Vector2), contract.GetMethod(nameof(ICharacterServices.SetCharacterPosition))!.GetParameters()[1].ParameterType);
+        Assert.Equal(typeof(Vector2), contract.GetMethod(nameof(ICharacterServices.SetCharacterVelocity))!.GetParameters()[1].ParameterType);
+        Assert.Equal(typeof(Vector2), contract.GetMethod(nameof(ICharacterServices.TryGetCharacterPosition))!.GetParameters()[1].ParameterType.GetElementType());
+        Assert.Equal(typeof(float), contract.GetMethod(nameof(ICharacterServices.SetCharacterZ))!.GetParameters()[1].ParameterType);
+
+        // The one member that produces a handle instead of taking one: a label in, a handle out. That is how a
+        // mod reaches a character it did not create — the game's own player character, filed as "Self".
+        var bind = contract.GetMethod(nameof(ICharacterServices.TryBindCharacter))!;
+        Assert.Equal(typeof(string), bind.GetParameters()[0].ParameterType);
+        Assert.Equal(typeof(CharacterHandle), bind.GetParameters()[1].ParameterType.GetElementType());
+        Assert.Equal(typeof(bool), bind.ReturnType);
+    }
 }

@@ -182,6 +182,13 @@ internal sealed class UnityAssetFactory : IAssetFactory
         out CharacterSpriteSetStyle style) =>
         CharacterSprites.TryUnwrap(set, out frames, out style);
 
+    /// <summary>
+    /// Opens an AssetBundle a mod ships (see <see cref="AssetBundles"/>). Empty bytes are refused here, before
+    /// the engine is asked for anything.
+    /// </summary>
+    public bool TryOpenBundle(ReadOnlySpan<byte> bundleBytes, [NotNullWhen(true)] out AssetBundleHandle? bundle) =>
+        AssetBundles.TryOpen(bundleBytes, out bundle);
+
     public bool TryCreateAudioClip(
         string name,
         ReadOnlySpan<float> interleavedSamples,

@@ -128,6 +128,33 @@ public interface IAssetFactory
         [NotNullWhen(true)] out CharacterSpriteSetHandle? copy);
 
     /// <summary>
+    /// Opens an AssetBundle out of the bytes a mod carries — the one container of engine prefabs a mod ships —
+    /// and answers with the handle over the prefabs inside it (<see cref="AssetBundleHandle"/>). The bytes are
+    /// the whole bundle file as the mod stored it; how the mod stores and finds them is its own business, this
+    /// member only takes them.
+    /// <para>
+    /// The call is synchronous: it answers once the bundle and the prefabs in it are readable, which is why the
+    /// handle that comes back can name them at once and why <see cref="AssetBundleHandle.ContainsPrefab"/> never
+    /// has to wait for a load. The engine fills an asset list that is asked for the moment the bundle is created
+    /// out of the stream, and reading that list before it is complete stalls the caller until it is — the
+    /// behaviour the mod that used to read the list itself relied on. There is no callback form on purpose: a
+    /// bundle that answered "no such prefab" while its load was in flight would turn the check a mod makes when
+    /// it loads its data (does this pack declare the effects the rest of it needs?) into a coin flip.
+    /// </para>
+    /// <para>
+    /// A mod that opens a bundle on the main thread therefore stalls it for the load, which is why the call
+    /// belongs where a mod loads its data rather than in a loop. The bundle, its prefabs and the stream it was
+    /// read from are the framework's from here on and stay loaded for the process: a prefab the framework filed
+    /// as a template is resolved by the game as well as by the mod, so there is no point at which a mod could
+    /// say the game is done with it.
+    /// </para>
+    /// </summary>
+    /// <param name="bundleBytes">The bytes of the bundle file; empty bytes are refused.</param>
+    /// <param name="bundle">The bundle, or null when the bytes were empty or the engine could not read a bundle
+    /// out of them.</param>
+    bool TryOpenBundle(ReadOnlySpan<byte> bundleBytes, [NotNullWhen(true)] out AssetBundleHandle? bundle);
+
+    /// <summary>
     /// Builds an audio clip out of already decoded samples. The factory does not decode a container: a WAV
     /// file is decoded by <see cref="WavAudio.TryDecode"/> first, and the three values it reports are exactly
     /// the three this method takes.

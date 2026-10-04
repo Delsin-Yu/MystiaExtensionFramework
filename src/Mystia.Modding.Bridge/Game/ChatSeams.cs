@@ -1,4 +1,5 @@
 using DayScene.UI;
+using GameData.Core.Collections.DaySceneUtility.Collections;
 using GameData.RunTime.Common;
 using GameData.RunTime.DaySceneUtility;
 using HarmonyLib;
@@ -105,5 +106,52 @@ internal static class ChatOptions
         var context = Build(option, data);
         foreach (var listener in Dispatch.Instances<IChatOptionListener>())
             listener.OnChatOptionAvailability(in context, ref available);
+    }
+}
+
+/// <summary>
+/// The confirmations the day scene's own chat flow acts on. A confirmation is a compiler generated callback the
+/// panel invokes with the player's verdict; the callback's body is what carries the confirmation out (for the
+/// Yuyuko challenge: schedule the challenge's event and start the challenge session), so the callback itself is
+/// what travels to the listeners - a mod that holds the confirmation keeps the action and runs it once the
+/// machine it talks to has decided.
+/// </summary>
+internal static class ChatConfirmationSeams
+{
+    // The name is the one the interop gives the callback of YuyukoExtraDialogData.Yuyuko_Challenge; a build whose
+    // compiler layout moved fails this file's build instead of silently hooking nothing.
+    [HarmonyPatch(
+        typeof(YuyukoExtraDialogData.__c__DisplayClass4_0),
+        nameof(YuyukoExtraDialogData.__c__DisplayClass4_0._Yuyuko_Challenge_b__2)
+    )]
+    private static class YuyukoChallenge
+    {
+        private static bool Prefix(YuyukoExtraDialogData.__c__DisplayClass4_0 __instance, bool confirm) =>
+            ChatConfirmations.Allow(
+                ChatConfirmationKind.YuyukoChallenge,
+                confirm,
+                () => __instance._Yuyuko_Challenge_b__2(confirm));
+    }
+}
+
+/// <summary>
+/// The dispatch of a chat confirmation. It is pure dispatch, so the order the listeners are asked in, what they
+/// see of each other's verdict and the action they are handed stay testable without the game running (see the
+/// chat confirmation suite).
+/// </summary>
+internal static class ChatConfirmations
+{
+    /// <summary>
+    /// Asks every listener whether one confirmation may act; false holds the game's own action. The action travels
+    /// inside the view, so a listener that held the confirmation can run it later - and running it is the same
+    /// call the game was about to make, which is what makes the confirmation reach its listeners again.
+    /// </summary>
+    internal static bool Allow(ChatConfirmationKind kind, bool confirmed, Action confirm)
+    {
+        var view = new ChatConfirmationView(kind, confirmed, confirm);
+        var cancel = false;
+        foreach (var listener in Dispatch.Instances<IChatConfirmationListener>())
+            listener.OnPreChatConfirmation(view, ref cancel);
+        return !cancel;
     }
 }

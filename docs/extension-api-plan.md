@@ -180,7 +180,7 @@ Everything below the design sections is implemented, except where noted:
 
 - Host: `IGlobalGameLoop`/`IGlobalServices`, `IIMGUIProvider`/`IIMGUIDrawer`, coroutines with a managed pump and opaque handles, `IModStorage`, `IDialogCatalog`, `IGuestRecords`, extended `ILog`, `IPlatformInfo` (handed out as `ICommonServices.Platform`).
 - Capability split: `ICommonServices` is the always available set (main thread scheduler, process level coroutine dispatcher, platform info and the interface free of a scene), while `IPresentationServices` is the scene scoped set (camera shake, effects, audio, player and table positions) exposed by every scene services object as `Presentation` and gated by `ServiceScope`. The scene loop contract is split per scene under `src/Mystia.Net.Sdk/GameApi/SceneLoops*.cs`.
-- Listeners: session, status, mission, day/work UI, metrics, QTE, schedule, chat option/menu, cook selection, post-evaluation, guest spawn requests, leave dispatch for `LeaveFromDesk`.
+- Listeners: session, status, mission, day/work UI, metrics, QTE, schedule, chat option/menu, chat confirmation (a held confirmation keeps the game's own action), cook selection, post-evaluation, guest spawn requests, leave dispatch for `LeaveFromDesk`.
 - Services: economy (metrics edits + popularity tags), time (whole night seconds, timing gate), QTE, buffs, spell host, spawn marker refresh, reward replay.
 - Data: clothes, spells, buffs, mission/event nodes, day maps and the extension seams they need; merchants now carry a full runtime pipeline.
 - Spells: mods implement `ISpell`; the bridge wraps it in its own `SpellBase` subclass, drives the managed routine on the framework pump and enters the scene scope per resume step.

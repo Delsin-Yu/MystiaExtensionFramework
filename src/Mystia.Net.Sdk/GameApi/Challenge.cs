@@ -346,6 +346,22 @@ namespace Mystia.Scenes
         bool? BossOrderEnabled { get; set; }
 
         /// <summary>
+        /// Whether the second phase's timed negative spell applies its effect. True, the default, is the game's
+        /// own behaviour; false replaces the routine's body with the wait it would have ended on and tells the
+        /// listeners it was suppressed.
+        /// <para>
+        /// A machine that takes the phase's effects from another machine needs the spell not to land twice, and
+        /// the routine still has to finish rather than be stopped: the game stops the phase's routines when the
+        /// phase ends, and a routine that was never started cannot be stopped.
+        /// </para>
+        /// </summary>
+        bool TimedNegativeSpellEnabled
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        /// <summary>
         /// Whether the challenge's scene may be left. The framework holds the game's own leave
         /// (<c>NightSceneDirector.TryLeaveSession</c>) while a challenge it owns still runs, so a leave only
         /// passes inside the challenge's exit window - the run ended and the game is on its way out. Inside
@@ -442,6 +458,13 @@ namespace Mystia.Listeners
 
         /// <summary>The iteration reported by <paramref name="attempt"/> ran and spawned its guests.</summary>
         void OnChallengeGuestSpawned(ChallengeSpawnAttempt attempt) { }
+
+        /// <summary>
+        /// The second phase's timed negative spell was suppressed, and the routine is finishing on the wait it
+        /// would have ended on. This is where a mod tells the player what the game's own line would have said,
+        /// since the framework has no text of its own to show.
+        /// </summary>
+        void OnTimedNegativeSpellSuppressed() { }
 
         /// <summary>
         /// The challenge's own evaluation callback for <paramref name="evaluation"/>'s group is about to run,

@@ -1,5 +1,6 @@
 using GameData.Profile;
 using HarmonyLib;
+using Mystia.Listeners;
 using Mystia.Scenes;
 using NightScene.UI.HUDUtility;
 using UnityEngine;
@@ -9,6 +10,7 @@ using Phase1SpawnLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.Ob
 using PhaseClock = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObFu1BoexSiInObObUnique;
 using Phase2SpawnLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObWaVoObMoInVoBoOb1;
 using Phase3SpawnLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_6.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObWaVoObMoInVoBoOb0;
+using NegativeSpellLoop = GameData.Profile.YuyukoBossData.__c__DisplayClass16_0.ObjectCompilerGeneratedNPrivateSealedIEnumerator1ObjectIEnumeratorIDisposableInObWaVoObMoInVoBoOb2;
 using RunLoop = GameData.Profile.YuyukoBossData._MainChallengeLoop_d__16;
 
 namespace Mystia.Modding.Bridge;
@@ -315,6 +317,36 @@ internal static class ChallengeSpawnSeams
 /// The phases themselves: the challenge's own status panel is told a phase through <c>SetContext</c>, which is
 /// the only place the game states which phase it is entering.
 /// </summary>
+/// <summary>
+/// The seam of the effect the second phase runs on its own: its timed negative spell. Replacing the routine's
+/// body (rather than stopping it) is what makes a suppression possible at all — the game stops the phase's
+/// routines when the phase ends, and a routine that was never started cannot be stopped.
+/// </summary>
+internal static class ChallengeSpellSeams
+{
+    [HarmonyPatch(typeof(NegativeSpellLoop), nameof(NegativeSpellLoop.MoveNext))]
+    private static class NegativeSpell
+    {
+        private static bool Prefix(NegativeSpellLoop __instance, ref bool __result)
+        {
+            if (ChallengeTimeline.Shared.NegativeSpellVerdict is not false)
+                return true;
+
+            // The spell is not applied on this machine. The routine keeps the shape the game's own ending has -
+            // one wait and then finish - and the listeners hear about it at that ending, which is where the
+            // game's own line would have been shown.
+            if (__instance.__2__current is null)
+            {
+                __instance.__2__current = new WaitForSeconds(1f);
+                Dispatch.Run<IChallengeListener>(listener => listener.OnTimedNegativeSpellSuppressed());
+            }
+
+            __result = true;
+            return false;
+        }
+    }
+}
+
 internal static class ChallengePhaseSeams
 {
     [HarmonyPatch(typeof(IncomeControllerYuyuko), nameof(IncomeControllerYuyuko.SetContext))]

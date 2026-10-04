@@ -90,6 +90,7 @@ internal sealed class ChallengeTimeline
     private GuestHandle _bossGuest;
     private readonly Dictionary<nint, ChallengeBossHandle> _groups = [];
     private bool? _bossOrderEnabled;
+    private bool? _negativeSpellEnabled;
     private int _bossLife = -1;
     private bool _bossLifeKnown;
     private bool _bossLifePending;
@@ -118,6 +119,9 @@ internal sealed class ChallengeTimeline
 
     /// <summary>The framework's verdict for the boss's order flag, or null while the game owns it.</summary>
     internal bool? BossOrderVerdict => _bossOrderEnabled;
+
+    /// <summary>The framework's verdict for the second phase's timed negative spell, or null while the game owns it.</summary>
+    internal bool? NegativeSpellVerdict => _negativeSpellEnabled;
 
     /// <summary>
     /// The boss's life: what the game reported last, or what a mod wrote, or -1 while nothing did. The mirror
@@ -263,6 +267,7 @@ internal sealed class ChallengeTimeline
         _bossHandle = default;
         _groups.Clear();
         _bossOrderEnabled = null;
+        _negativeSpellEnabled = null;
         _bossLife = -1;
         _bossLifeKnown = false;
         _bossLifePending = false;
@@ -636,6 +641,12 @@ internal sealed class ChallengeTimeline
     }
 
     /// <summary>
+    /// Arms the framework's verdict for the second phase's timed negative spell. Null leaves the routine to the
+    /// game; false is read by the routine's own seam, which turns its body into the wait it would have ended on.
+    /// </summary>
+    internal void ArmNegativeSpell(bool enabled) => _negativeSpellEnabled = enabled;
+
+    /// <summary>
     /// Writes the armed verdict into the retake's order flag again, called from the step that assigns the flag:
     /// the game assigns it at the start of that step, so writing here is what makes the framework's verdict the
     /// one the flag holds for the interval it governs. A null verdict leaves the game's own assignment alone.
@@ -858,6 +869,20 @@ internal sealed class ChallengeServices : IWorkSceneChallengeServices
         {
             ServiceScope.Require();
             ChallengeTimeline.Shared.ArmBossOrder(value);
+        }
+    }
+
+    public bool TimedNegativeSpellEnabled
+    {
+        get
+        {
+            ServiceScope.Require();
+            return ChallengeTimeline.Shared.NegativeSpellVerdict is not false;
+        }
+        set
+        {
+            ServiceScope.Require();
+            ChallengeTimeline.Shared.ArmNegativeSpell(value);
         }
     }
 

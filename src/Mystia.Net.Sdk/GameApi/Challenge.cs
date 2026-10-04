@@ -467,6 +467,16 @@ namespace Mystia.Listeners
         void OnTimedNegativeSpellSuppressed() { }
 
         /// <summary>
+        /// The challenge let the game's own leave of the night scene through: the run is over and the scene is
+        /// on its way out. It fires before the game loads the next scene inside that leave, so a mod that reads
+        /// its own scene transition decisions while the load is under way sees what this sets.
+        /// </summary>
+        void OnChallengeLeaveStarted() { }
+
+        /// <summary>The leave the challenge let through returned.</summary>
+        void OnChallengeLeaveFinished() { }
+
+        /// <summary>
         /// The challenge's own evaluation callback for <paramref name="evaluation"/>'s group is about to run,
         /// with the result and the combo protection flag the game hands it. A mod may rewrite both
         /// (<c>evaluation = evaluation with { Result = … }</c>), and the callback then runs with what the

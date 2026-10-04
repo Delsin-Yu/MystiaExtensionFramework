@@ -1,4 +1,5 @@
 using HarmonyLib;
+using Mystia.Listeners;
 using NightScene;
 using NightScene.CookingUtility;
 using NightScene.GuestManagementUtility;
@@ -146,15 +147,23 @@ internal static class ChallengeLeaveSeams
         private static bool Prefix(Il2CppSystem.Action onFinish)
         {
             var timeline = ChallengeTimeline.Shared;
-            if (timeline.MayLeaveScene())
-                return true;
+            if (!timeline.MayLeaveScene())
+            {
+                // The leave did not run, so the game will not ask again on its own: the callback is kept and the
+                // retry below re-issues the very same call once the gate opens.
+                _held = onFinish;
+                timeline.LeaveRetry = Retry;
+                return false;
+            }
 
-            // The leave did not run, so the game will not ask again on its own: the callback is kept and the
-            // retry below re-issues the very same call once the gate opens.
-            _held = onFinish;
-            timeline.LeaveRetry = Retry;
-            return false;
+            // This is the challenge's own leave, and the game loads the next scene synchronously inside it: the
+            // listeners hear about it before that happens, so what they set is visible while the load runs.
+            Dispatch.Run<IChallengeListener>(listener => listener.OnChallengeLeaveStarted());
+            return true;
         }
+
+        private static void Postfix() =>
+            Dispatch.Run<IChallengeListener>(listener => listener.OnChallengeLeaveFinished());
 
         private static void Retry()
         {

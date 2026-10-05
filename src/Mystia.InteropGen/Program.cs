@@ -26,10 +26,10 @@ public static class Program
         // An option's value is not a positional argument. Reading them apart matters: `--managed <dir>` used to
         // leave <dir> in the positional list, where it took the output directory's place and the generator wrote
         // the interop straight over the very assemblies it was reading.
-        var optionsWithValue = new[] { "--managed", "--output" };
         var positional = new List<string>();
         var explicitManaged = "";
         var explicitOutput = "";
+        var repairLayouts = "";
         var symbolsOnly = false;
         var allowStripped = false;
         for (var index = 0; index < args.Length; index++)
@@ -42,6 +42,9 @@ public static class Program
                     continue;
                 case "--output" when index + 1 < args.Length:
                     explicitOutput = args[++index];
+                    continue;
+                case "--repair-layouts" when index + 1 < args.Length:
+                    repairLayouts = args[++index];
                     continue;
                 case "--symbols-backup":
                     symbolsOnly = true;
@@ -57,9 +60,21 @@ public static class Program
                 positional.Add(arg);
         }
 
+        if (!string.IsNullOrWhiteSpace(repairLayouts))
+        {
+            if (!Directory.Exists(repairLayouts))
+            {
+                Console.Error.WriteLine("Interop directory was not found: " + repairLayouts);
+                return 1;
+            }
+
+            return RepairLayouts(repairLayouts);
+        }
+
         if (positional.Count < 2 || string.IsNullOrWhiteSpace(positional[0]) || string.IsNullOrWhiteSpace(positional[1]))
         {
             Console.Error.WriteLine("Usage: Mystia.InteropGen <game-project-dir> <game-install-dir> [output-dir] [unity-libs-dir] [--managed <dir>] [--output <dir>] [--symbols-backup] [--allow-stripped-backup] [--passthrough]");
+            Console.Error.WriteLine("       Mystia.InteropGen --repair-layouts <interop-dir>");
             Console.Error.WriteLine("The project directory must contain a Build folder holding a Managed backup, such as");
             Console.Error.WriteLine("Build\\Symbols\\...\\Managed or Build\\<game>_BackUpThisFolder_ButDontShipItWithYourGame\\Managed.");
             Console.Error.WriteLine("The install directory must contain GameAssembly.dll and global-metadata.dat.");
@@ -68,6 +83,8 @@ public static class Program
             Console.Error.WriteLine("--symbols-backup requires the chosen backup to live under a Symbols folder.");
             Console.Error.WriteLine("--allow-stripped-backup accepts a backup with no Symbols sibling, which may leave members out.");
             Console.Error.WriteLine("--passthrough keeps the source names verbatim, which no C# source can reference.");
+            Console.Error.WriteLine("--repair-layouts lays out the value types of interop that was generated before this tool did");
+            Console.Error.WriteLine("it, in place, and touches nothing else.");
             return 1;
         }
 
@@ -132,6 +149,15 @@ public static class Program
             .AddInteropAssemblyGenerator()
             .Run();
 
+        // Il2CppInterop only copies field offsets out of the input, so the generated value types have to be
+        // laid out before anything runs against them. See FieldLayoutPass.
+        var report = LayOut(output);
+        Console.WriteLine($"Layouts: {report.Summary()}");
+        foreach (var name in report.Unresolved.Take(20))
+            Console.WriteLine($"  no size for a field of {name}");
+        foreach (var name in report.Flat.Take(20))
+            Console.WriteLine($"  still at offset 0: {name}");
+
         var manifest = new
         {
             gameAssemblySha256 = hash,
@@ -142,12 +168,50 @@ public static class Program
             unityLibsDir = unityLibs,
             passthroughNames = passthroughNames,
             outputDir = output,
+            valueTypesLaidOut = report.Materialized,
+            valueTypesWithoutASize = report.Unresolved,
+            valueTypesWithoutAnOffset = report.Flat,
         };
         File.WriteAllText(
             Path.Combine(output, "interop-manifest.json"),
             JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine("Wrote interop-manifest.json");
         return 0;
+    }
+
+    /// <summary>
+    /// Lays out the value types of every assembly in an interop directory and writes them back, in place.
+    /// </summary>
+    private static int RepairLayouts(string directory)
+    {
+        var report = LayOut(directory);
+        Console.WriteLine($"Layouts: {report.Summary()}");
+        foreach (var name in report.Unresolved.Take(20))
+            Console.WriteLine($"  no size for a field of {name}");
+        foreach (var name in report.Flat.Take(20))
+            Console.WriteLine($"  still at offset 0: {name}");
+        return 0;
+    }
+
+    private static FieldLayoutReport LayOut(string directory)
+    {
+        var assemblies = new List<AssemblyDefinition>();
+        var paths = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(directory, "*.dll"))
+        {
+            paths.Add(file);
+            assemblies.Add(AssemblyDefinition.FromBytes(File.ReadAllBytes(file)));
+        }
+
+        var report = FieldLayoutPass.Materialize(assemblies);
+        for (var index = 0; index < assemblies.Count; index++)
+        {
+            var temporary = paths[index] + ".layout";
+            assemblies[index].Write(temporary);
+            File.Move(temporary, paths[index], true);
+        }
+
+        return report;
     }
 
     private static List<AssemblyDefinition> LoadManagedAssemblies(string managed)

@@ -1,51 +1,26 @@
-using GamePlatform.Profiles;
-using HarmonyLib;
-using Il2CppInterop.Runtime.InteropTypes.Arrays;
-
 namespace Mystia.Modding.Bridge;
 
-// IPlatformInfo is host state rather than a notification: the game's platform profile enumerates its DLC
-// keys once while the store front starts up, and the bridge stores them here. The class exposes Shared so the
-// host contexts can hand the same instance out; no public contract exposes it until the capability move puts
-// it on ICommonServices.
+// IPlatformInfo is host state rather than a notification: the game's platform resolves its DLC keys while the
+// store front starts up. Two ways to read them were tried on this host and both fail, so the keys stay
+// unresolved and a mod falls back to the load path it already has for a store front that resolves nothing.
+//
+//  - Detouring SteamPlatformProfile.GetActiveKeys: reading the patched result needs Il2CppStringArray, whose
+//    type initialiser throws, and Il2CppInterop's native-to-managed trampoline catches that and returns the
+//    default value. The engine's own data profile then receives a null array from its own platform and stops
+//    loading resources - it fails inside List.InsertRange with "Value cannot be null. Parameter name:
+//    collection" and raises its "cannot load game files" screen.
+//  - Calling PlatformBase.GetActiveDLCAppKey through the interop: the call itself reaches the engine, but the
+//    Il2CppStringArray it returns cannot be constructed either. The initialiser of Il2CppSystem.String - the
+//    element type that array needs - fails to JIT with BadImageFormatException inside MonoMod's JIT hook,
+//    which is installed in this process (see X64DetourProvider).
+//
+// The call is the right way to get the keys; it becomes usable once nothing in the process installs MonoMod's
+// JIT hook. Until then this type answers what the fallback path expects.
 internal sealed class PlatformInfo : IPlatformInfo
 {
     internal static readonly PlatformInfo Shared = new();
 
-    private volatile bool _resolved;
+    public bool KeysResolved => false;
 
-    private IReadOnlyList<string> _activeKeys = [];
-
-    public bool KeysResolved => _resolved;
-
-    public IReadOnlyList<string> ActiveDlcKeys => _activeKeys;
-
-    /// <summary>Records the keys the platform resolved and flips <see cref="KeysResolved"/> to true.</summary>
-    internal void Resolve(Il2CppStringArray? keys)
-    {
-        var resolved = new List<string>(keys?.Count ?? 0);
-        if (keys is not null)
-        {
-            foreach (var key in keys)
-            {
-                if (key is not null)
-                    resolved.Add(key);
-            }
-        }
-
-        _activeKeys = resolved;
-        _resolved = true;
-    }
-}
-
-internal static class PlatformInfoSeams
-{
-    // The compat patch this replaces hooked the Steam profile's own GetActiveKeys; only the Steam profile
-    // is patched, so a non-Steam store front leaves KeysResolved false and ActiveDlcKeys empty, which is the
-    // same fallback path Core.cs takes today.
-    [HarmonyPatch(typeof(SteamPlatformProfile), nameof(SteamPlatformProfile.GetActiveKeys))]
-    private static class ActiveDlcKeys
-    {
-        private static void Postfix(Il2CppStringArray __result) => PlatformInfo.Shared.Resolve(__result);
-    }
+    public IReadOnlyList<string> ActiveDlcKeys => [];
 }

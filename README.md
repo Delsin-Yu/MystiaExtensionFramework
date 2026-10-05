@@ -69,6 +69,34 @@ dotnet run --project src/Mystia.InteropGen -- <game-project-dir> <game-install-d
 
 The generator writes `interop-manifest.json` into the output directory, recording the `GameAssembly.dll` and `global-metadata.dat` hashes it read. `BepInEx/interop` inside the install directory is usually older than the installed game and is not a source of names. A mod may not bind these names at all (analyzer MYSTIA1005); the bridge does, which is why its interop has to match the installed build.
 
+### Value type layouts
+
+Interop has to be generated with the tool in this repository, because the generator lays the value types out
+afterwards. Il2CppInterop writes every generated value type as explicit layout and copies each field's offset
+out of the input's `FieldOffsetAttribute` - the named `Offset` property Il2CppDumper's dummy assemblies carry -
+and it never computes one from the fields. A managed backup of the game project carries no such attribute, and
+a dump whose field offsets were not recovered carries none either, so every field of every generated struct
+lands at offset 0 and the managed struct is as small as its largest field: Unity's `Color`, sixteen bytes in
+the engine, is four bytes here. Any engine call that writes such a value back through a managed address - the
+generated constructors hand `Unsafe.AsPointer(ref this)` to `il2cpp_runtime_invoke` - then writes past the
+managed local and over its caller's frame, which the runtime reports as a stack cookie check failure
+(`0xC0000409`, subcode 2) somewhere several frames away from the call that caused it.
+
+`Mystia.InteropGen` lays those value types out itself: a type that has no offsets keeps the layout it was
+given, a type whose fields all sit at 0 is laid out the way a sequential struct is (each field at the first
+offset its own type's alignment allows, capped by the pack size), and the report printed at the end names the
+types it could not size instead of guessing them. The pass only ever moves fields up, so a repaired type is
+never smaller than the one it replaces. Interop generated before this pass existed is repaired in place:
+
+```text
+dotnet run --project src/Mystia.InteropGen -- --repair-layouts <interop-dir>
+```
+
+Explicit layouts that overlap on purpose (a union, a native struct with padding) cannot be recovered from an
+input that lost its offsets; they come out sequential instead, which is larger and therefore safe, but their
+fields then do not alias the way the engine's do. Generate from a dump that carries `FieldOffsetAttribute` for
+those, or lay them out by hand.
+
 `sdk/Mystia.Extension.Sdk/Sdk/Sdk.props` and `Sdk.targets` ship inside the `Mystia.Extension.Sdk` package, so a mod is always built against the version the package was packed at. Keep the version in the nuspec, in this README and in the sample projects the same (currently 2.0.x).
 
 Namespaces:

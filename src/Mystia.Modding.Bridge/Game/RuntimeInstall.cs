@@ -2,15 +2,49 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
 using HarmonyLib.Public.Patching;
-using Mystia.Data;
-using Mystia.Listeners;
-using Mystia.Scenes;
+using Il2CppInterop.Common;
 using Il2CppInterop.HarmonySupport;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.Injection;
 using Il2CppInterop.Runtime.Startup;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Mystia.Data;
+using Mystia.Listeners;
+using Mystia.Scenes;
 
 namespace Mystia.Modding.Bridge;
+
+/// <summary>
+/// Where Il2CppInterop's own reporting goes.
+///
+/// A native to managed trampoline answers a failure - the patch method threw, or anything it called did - by
+/// reporting it to this logger and returning the default value to the caller, which is native code that cannot
+/// see a managed exception. The default logger is a NullLogger, so the reason went nowhere: the engine received
+/// a null, a zero or an empty string and failed somewhere else entirely, or asked the same uncompileable method
+/// again, and a run that died this way left nothing behind that named the cause. Everything the interop reports
+/// now reaches host.log, including the stack of every swallowed trampoline failure.
+/// </summary>
+/// <remarks>
+/// Microsoft.Extensions.Logging.LogLevel and .EventId are written out in full on purpose. This namespace is
+/// nested inside <c>Mystia</c>, whose own <see cref="LogLevel"/> is the framework's mod facing log level: the
+/// plain name binds to that one - the enclosing namespace is searched before the file's using directives - and
+/// the class then fails to implement the interface with CS0535, which names neither the type nor the reason.
+/// </remarks>
+internal sealed class HostLog : ILogger
+{
+    public IDisposable BeginScope<TState>(TState state) => NullLogger.Instance.BeginScope(state);
+
+    public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+    public void Log<TState>(
+        Microsoft.Extensions.Logging.LogLevel logLevel,
+        Microsoft.Extensions.Logging.EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter) =>
+        GameBridgeHook.Trace($"{logLevel}: {formatter(state, exception)}{(exception is null ? "" : Environment.NewLine + exception)}");
+}
 
 internal static class GameBridgeHook
 {
@@ -29,7 +63,7 @@ internal static class GameBridgeHook
         {
             UnityVersion = new Version(2021, 3, 28),
             DetourProvider = new X64DetourProvider(),
-        }).AddHarmonySupport().Start();
+        }).AddLogger(new HostLog()).AddHarmonySupport().Start();
 
         ClassInjector.RegisterTypeInIl2Cpp<MainThreadPump>();
         PortraitSprites.RegisterHandles();

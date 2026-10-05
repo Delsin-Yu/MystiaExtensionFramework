@@ -78,10 +78,16 @@ internal sealed class X64DetourProvider : IDetourProvider
 
     internal sealed class Hook : IDetour
     {
-        private const int JumpSize = 14;
+        // The site patched is five bytes: a relative jump to the thunk next to the trampoline. Fourteen bytes
+        // (an absolute jmp) would steal instructions past the end of a short function - a setter, a one line
+        // wrapper - which overwrites the function that follows and replays bytes that were never this
+        // method's. The thunk carries the absolute target, and the trampoline carries the original.
+        private const int JumpSize = 5;
+        private const int ThunkSize = 16;
         private readonly byte[] _stolen;
         private readonly Delegate _target;
         private readonly nint _trampoline;
+        private readonly nint _body;
         private readonly int _stolenLength;
         private Delegate? _trampolineDelegate;
         private bool _applied;
@@ -96,22 +102,31 @@ internal sealed class X64DetourProvider : IDetourProvider
             _stolenLength = Measure(original, JumpSize);
             _stolen = new byte[_stolenLength];
             Marshal.Copy(original, _stolen, 0, _stolenLength);
-            _trampoline = AllocateNear(original, 256);
-            WriteTrampoline(_trampoline, original, _stolen, original + _stolenLength);
+            _trampoline = AllocateNear(original, 512);
+            _body = _trampoline + ThunkSize;
+            var thunk = new byte[ThunkSize];
+            WriteAbsoluteJump(thunk, 0, Detour);
+            Marshal.Copy(thunk, 0, _trampoline, thunk.Length);
+            Flush(_trampoline, thunk.Length);
+            WriteTrampoline(_body, original, _stolen, original + _stolenLength);
         }
 
         public nint Target { get; }
 
         public nint Detour { get; }
 
-        public nint OriginalTrampoline => _trampoline;
+        public nint OriginalTrampoline => _body;
 
         public void Apply()
         {
             if (_applied)
                 return;
             var patch = new byte[_stolenLength];
-            WriteAbsoluteJump(patch, 0, Detour);
+            var distance = _trampoline - (Target + JumpSize);
+            if (distance > int.MaxValue || distance < int.MinValue)
+                throw new InvalidOperationException($"The thunk for 0x{Target:X} is out of reach of a relative jump.");
+            patch[0] = 0xE9;
+            BitConverter.TryWriteBytes(patch.AsSpan(1), (int)distance);
             for (var index = JumpSize; index < patch.Length; index++)
                 patch[index] = 0x90;
             ProtectWrite(Target, patch);
@@ -120,7 +135,8 @@ internal sealed class X64DetourProvider : IDetourProvider
 
         public T GenerateTrampoline<T>() where T : Delegate
         {
-            var trampoline = Marshal.GetDelegateForFunctionPointer<T>(_trampoline);
+            // The callable original is the body, not the thunk: the thunk is the way into the patch.
+            var trampoline = Marshal.GetDelegateForFunctionPointer<T>(_body);
             _trampolineDelegate = trampoline;
             return trampoline;
         }
@@ -171,7 +187,8 @@ internal sealed class X64DetourProvider : IDetourProvider
             if (!BlockEncoder.TryEncode(64, block, out var error, out _))
                 throw new InvalidOperationException("Could not relocate the trampoline: " + error);
             var body = writer.Bytes;
-            var image = new byte[body.Count + JumpSize];
+            // The way back is an absolute jump, so the tail reserves its fourteen bytes, not the five the site patch uses.
+            var image = new byte[body.Count + ThunkSize];
             body.CopyTo(image);
             WriteAbsoluteJump(image, body.Count, resume);
             Marshal.Copy(image, 0, trampoline, image.Length);

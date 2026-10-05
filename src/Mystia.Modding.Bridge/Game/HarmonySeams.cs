@@ -327,24 +327,17 @@ internal static class PrepPanelCache
         }
     }
 
-    // IzakayaConfigPannel does not override OnPanelClose, so closing it runs UIPanelBaseImpl's
-    // implementation: the seam patches the declaring type and takes the config panel's own instances.
-    [HarmonyPatch(typeof(UIPanelBaseImpl), nameof(UIPanelBaseImpl.OnPanelClose))]
-    private static class ConfigClose
-    {
-        // The engine reaches this base implementation with a null object. That is a call the empty original
-        // answers and the interop cannot: its trampoline cannot hand a null instance over (the wrapper's
-        // Il2CppObjectBaseToPtrNotNull throws, the failure is reported and the default returned), and the
-        // seam's postfix then never runs. Without an instance there is nothing to close and nothing to drop,
-        // so the prefix answers the call the way the base implementation's own emptiness would.
-        private static bool Prefix(UIPanelBaseImpl __instance) => __instance is not null;
-
-        private static void Postfix(UIPanelBaseImpl __instance)
-        {
-            if (__instance is IzakayaConfigPannel config)
-                PanelViewCache.DropPrepConfig(config);
-        }
-    }
+    // Closing the config panel is NOT a seam. IzakayaConfigPannel does not override OnPanelClose, so that
+    // one call reaches UIPanelBaseImpl's empty implementation, and a patch there answers a call the empty
+    // original is alone able to answer. Measured: patching it killed the game on every save load
+    // (0xC0000005 inside IL2CPP.il2cpp_object_get_class, reached from Il2CppObjectPool.Get in the patch's
+    // native-to-managed trampoline); the interop reads the instance's class to wrap it, so an instance that
+    // is no longer an object is fatal where an empty native method never touches it. A destroyed panel can
+    // still be reached that way: AdpUIPanelManager.TryDeleteBufferedPanel destroys a buffered panel but
+    // keeps the UIPanelImpl that points at it. Removing the seam made the same click path load the save and
+    // enter the day scene. The view cache needs no close hook - the config panel is one of
+    // UniversalGameManager's persistent buffered panels, and ConfigOpen above drops the view when the panel
+    // opens again.
 }
 
 internal static class WorkSeams

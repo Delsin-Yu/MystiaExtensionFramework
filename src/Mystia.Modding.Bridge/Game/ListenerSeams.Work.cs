@@ -17,7 +17,7 @@ namespace Mystia.Modding.Bridge;
 /// <summary>
 /// One view per open panel. The first callback of a panel builds its view and every later callback of the
 /// same panel reuses it, so a pre hook and its matching post hook write into the same object. The entry is
-/// dropped when the panel closes, so a reopened panel starts from a fresh view.
+/// dropped when the panel opens, so a reopened panel starts from a fresh view.
 /// </summary>
 internal static class PanelViews<TPanel, TView>
     where TPanel : Il2CppObjectBase

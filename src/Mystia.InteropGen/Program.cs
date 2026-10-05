@@ -30,6 +30,7 @@ public static class Program
         var explicitManaged = "";
         var explicitOutput = "";
         var repairLayouts = "";
+        var repairTypeNames = "";
         var symbolsOnly = false;
         var allowStripped = false;
         for (var index = 0; index < args.Length; index++)
@@ -45,6 +46,9 @@ public static class Program
                     continue;
                 case "--repair-layouts" when index + 1 < args.Length:
                     repairLayouts = args[++index];
+                    continue;
+                case "--repair-type-names" when index + 1 < args.Length:
+                    repairTypeNames = args[++index];
                     continue;
                 case "--symbols-backup":
                     symbolsOnly = true;
@@ -71,10 +75,22 @@ public static class Program
             return RepairLayouts(repairLayouts);
         }
 
+        if (!string.IsNullOrWhiteSpace(repairTypeNames))
+        {
+            if (!Directory.Exists(repairTypeNames))
+            {
+                Console.Error.WriteLine("Interop directory was not found: " + repairTypeNames);
+                return 1;
+            }
+
+            return RepairTypeNames(repairTypeNames);
+        }
+
         if (positional.Count < 2 || string.IsNullOrWhiteSpace(positional[0]) || string.IsNullOrWhiteSpace(positional[1]))
         {
             Console.Error.WriteLine("Usage: Mystia.InteropGen <game-project-dir> <game-install-dir> [output-dir] [unity-libs-dir] [--managed <dir>] [--output <dir>] [--symbols-backup] [--allow-stripped-backup] [--passthrough]");
             Console.Error.WriteLine("       Mystia.InteropGen --repair-layouts <interop-dir>");
+            Console.Error.WriteLine("       Mystia.InteropGen --repair-type-names <interop-dir>");
             Console.Error.WriteLine("The project directory must contain a Build folder holding a Managed backup, such as");
             Console.Error.WriteLine("Build\\Symbols\\...\\Managed or Build\\<game>_BackUpThisFolder_ButDontShipItWithYourGame\\Managed.");
             Console.Error.WriteLine("The install directory must contain GameAssembly.dll and global-metadata.dat.");
@@ -85,6 +101,8 @@ public static class Program
             Console.Error.WriteLine("--passthrough keeps the source names verbatim, which no C# source can reference.");
             Console.Error.WriteLine("--repair-layouts lays out the value types of interop that was generated before this tool did");
             Console.Error.WriteLine("it, in place, and touches nothing else.");
+            Console.Error.WriteLine("--repair-type-names rewrites the type name calls a pointer parameter makes uncompileable, in");
+            Console.Error.WriteLine("place, and touches nothing else.");
             return 1;
         }
 
@@ -151,12 +169,21 @@ public static class Program
 
         // Il2CppInterop only copies field offsets out of the input, so the generated value types have to be
         // laid out before anything runs against them. See FieldLayoutPass.
-        var report = LayOut(output);
+        // It also renders a pointer parameter's type name through a generic method that cannot be
+        // instantiated, which makes the constructor that holds it uncompileable. See TypeNameCallPass.
+        var assemblies = ReadInterop(output, out var paths);
+        var report = FieldLayoutPass.Materialize(assemblies);
+        var typeNames = TypeNameCallPass.Rewrite(assemblies);
+        WriteInterop(assemblies, paths);
+
         Console.WriteLine($"Layouts: {report.Summary()}");
         foreach (var name in report.Unresolved.Take(20))
             Console.WriteLine($"  no size for a field of {name}");
         foreach (var name in report.Flat.Take(20))
             Console.WriteLine($"  still at offset 0: {name}");
+        Console.WriteLine($"Type names: {typeNames.Summary()}");
+        foreach (var name in typeNames.Unrecognised.Take(20))
+            Console.WriteLine($"  left alone: {name}");
 
         var manifest = new
         {
@@ -171,6 +198,8 @@ public static class Program
             valueTypesLaidOut = report.Materialized,
             valueTypesWithoutASize = report.Unresolved,
             valueTypesWithoutAnOffset = report.Flat,
+            typeNameCallsRewritten = typeNames.Rewritten,
+            typeNameCallsLeftAlone = typeNames.Unrecognised,
         };
         File.WriteAllText(
             Path.Combine(output, "interop-manifest.json"),
@@ -184,7 +213,9 @@ public static class Program
     /// </summary>
     private static int RepairLayouts(string directory)
     {
-        var report = LayOut(directory);
+        var assemblies = ReadInterop(directory, out var paths);
+        var report = FieldLayoutPass.Materialize(assemblies);
+        WriteInterop(assemblies, paths);
         Console.WriteLine($"Layouts: {report.Summary()}");
         foreach (var name in report.Unresolved.Take(20))
             Console.WriteLine($"  no size for a field of {name}");
@@ -193,25 +224,41 @@ public static class Program
         return 0;
     }
 
-    private static FieldLayoutReport LayOut(string directory)
+    /// <summary>
+    /// Rewrites the type name calls of every assembly in an interop directory, in place.
+    /// </summary>
+    private static int RepairTypeNames(string directory)
+    {
+        var assemblies = ReadInterop(directory, out var paths);
+        var report = TypeNameCallPass.Rewrite(assemblies);
+        WriteInterop(assemblies, paths);
+        Console.WriteLine($"Type names: {report.Summary()}");
+        foreach (var name in report.Unrecognised.Take(20))
+            Console.WriteLine($"  left alone: {name}");
+        return 0;
+    }
+
+    private static List<AssemblyDefinition> ReadInterop(string directory, out List<string> paths)
     {
         var assemblies = new List<AssemblyDefinition>();
-        var paths = new List<string>();
+        paths = [];
         foreach (var file in Directory.EnumerateFiles(directory, "*.dll"))
         {
             paths.Add(file);
             assemblies.Add(AssemblyDefinition.FromBytes(File.ReadAllBytes(file)));
         }
 
-        var report = FieldLayoutPass.Materialize(assemblies);
+        return assemblies;
+    }
+
+    private static void WriteInterop(List<AssemblyDefinition> assemblies, List<string> paths)
+    {
         for (var index = 0; index < assemblies.Count; index++)
         {
-            var temporary = paths[index] + ".layout";
+            var temporary = paths[index] + ".interop";
             assemblies[index].Write(temporary);
             File.Move(temporary, paths[index], true);
         }
-
-        return report;
     }
 
     private static List<AssemblyDefinition> LoadManagedAssemblies(string managed)

@@ -332,6 +332,13 @@ internal static class PrepPanelCache
     [HarmonyPatch(typeof(UIPanelBaseImpl), nameof(UIPanelBaseImpl.OnPanelClose))]
     private static class ConfigClose
     {
+        // The engine reaches this base implementation with a null object. That is a call the empty original
+        // answers and the interop cannot: its trampoline cannot hand a null instance over (the wrapper's
+        // Il2CppObjectBaseToPtrNotNull throws, the failure is reported and the default returned), and the
+        // seam's postfix then never runs. Without an instance there is nothing to close and nothing to drop,
+        // so the prefix answers the call the way the base implementation's own emptiness would.
+        private static bool Prefix(UIPanelBaseImpl __instance) => __instance is not null;
+
         private static void Postfix(UIPanelBaseImpl __instance)
         {
             if (__instance is IzakayaConfigPannel config)

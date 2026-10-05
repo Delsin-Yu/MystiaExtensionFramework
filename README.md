@@ -86,11 +86,17 @@ managed local and over its caller's frame, which the runtime reports as a stack 
 given, a type whose fields all sit at 0 is laid out the way a sequential struct is (each field at the first
 offset its own type's alignment allows, capped by the pack size), and the report printed at the end names the
 types it could not size instead of guessing them. The pass only ever moves fields up, so a repaired type is
-never smaller than the one it replaces. Interop generated before this pass existed is repaired in place:
+never smaller than the one it replaces. Every further shape the CLR refuses has its own pass: a type name
+rendered through an instantiation that cannot exist, a pointer conversion through a constructor .NET Core
+dropped, a `params` array default built as an array the parameter is not declared with, a `System.ValueType`
+constraint on the generated mirror, and the `ComImport` flag a mirrored COM type cannot keep. Interop generated
+before them is repaired in place, by every pass at once:
 
 ```text
-dotnet run --project src/Mystia.InteropGen -- --repair-layouts <interop-dir>
+dotnet run --project src/Mystia.InteropGen -- --repair <interop-dir>
 ```
+
+Running it twice changes no byte, and a fresh generation from the same input needs no repair step at all.
 
 Explicit layouts that overlap on purpose (a union, a native struct with padding) cannot be recovered from an
 input that lost its offsets; they come out sequential instead, which is larger and therefore safe, but their

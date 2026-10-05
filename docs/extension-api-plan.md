@@ -174,7 +174,15 @@ Mapping tables `FoodsMapping`, `BeveragesMapping` and `RecipesMapping` record th
 
 `Mystia.InteropGen` takes the game project directory and the install directory. The managed source is a `Managed` backup under the project's `Build` folder (the `Symbols` flavour when there is one); `GameAssembly.dll` and `global-metadata.dat` come from the install directory, and generation is refused unless that `GameAssembly.dll` is the pinned build. `Library/ScriptAssemblies` is not a usable source: the unstripped project assemblies do not match the stripped engine modules and the generator throws.
 
-Two passes then repair what Il2CppInterop's output cannot run. `FieldLayoutPass` gives every generated value type the field offsets the generator only copies out of the input, because an input without `FieldOffsetAttribute` leaves all of them at offset 0 and the engine then writes past the managed local. `TypeNameCallPass` rewrites the type name call a pointer parameter produces: the generator renders it as `RenderTypeName<System.Byte*>`, a generic instantiation the CLR refuses, which makes the whole constructor holding the call impossible to compile. Both passes can also be applied to interop that was generated before them, in place - `--repair-layouts <dir>` and `--repair-type-names <dir>` - and `interop-manifest.json` records what a generation run did.
+The passes below then repair what Il2CppInterop's output cannot run. `FieldLayoutPass` gives every generated value type the field offsets the generator only copies out of the input, because an input without `FieldOffsetAttribute` leaves all of them at offset 0 and the engine then writes past the managed local. `TypeNameCallPass` rewrites the type name call a pointer or byref-like parameter produces: the generator renders it as `RenderTypeName<System.Byte*>`, a generic instantiation the CLR refuses, which makes the whole constructor holding the call impossible to compile. `PointerConversionPass` replaces the managed pointer constructor the generator uses to turn an `IntPtr` result back into a pointer - a constructor .NET Core no longer has - with `IntPtr.ToPointer()`. `ParamsArrayDefaultPass` builds the null default of a `params` array as the array its parameter was declared with, because the generator picks that wrapper from the input's element type while the parameter itself was converted from the generated one. `ValueTypeConstraintPass` moves a `System.ValueType` constraint off the generated mirror, and `ComImportTypePass` clears the `ComImport` flag a mirrored COM type cannot keep.
+
+All of them also apply to interop that was generated before them, in place:
+
+```text
+dotnet run --project src/Mystia.InteropGen -- --repair <interop-dir>
+```
+
+`interop-manifest.json` records what a generation run did. `.spinney/crash-handoff.md` (scratch, not committed) records how each shape was found and what the JIT scan over the generated assemblies measured before and after.
 
 ## Delivered
 

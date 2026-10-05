@@ -29,8 +29,7 @@ public static class Program
         var positional = new List<string>();
         var explicitManaged = "";
         var explicitOutput = "";
-        var repairLayouts = "";
-        var repairTypeNames = "";
+        var repair = "";
         var symbolsOnly = false;
         var allowStripped = false;
         for (var index = 0; index < args.Length; index++)
@@ -44,11 +43,8 @@ public static class Program
                 case "--output" when index + 1 < args.Length:
                     explicitOutput = args[++index];
                     continue;
-                case "--repair-layouts" when index + 1 < args.Length:
-                    repairLayouts = args[++index];
-                    continue;
-                case "--repair-type-names" when index + 1 < args.Length:
-                    repairTypeNames = args[++index];
+                case "--repair" when index + 1 < args.Length:
+                    repair = args[++index];
                     continue;
                 case "--symbols-backup":
                     symbolsOnly = true;
@@ -64,33 +60,21 @@ public static class Program
                 positional.Add(arg);
         }
 
-        if (!string.IsNullOrWhiteSpace(repairLayouts))
+        if (!string.IsNullOrWhiteSpace(repair))
         {
-            if (!Directory.Exists(repairLayouts))
+            if (!Directory.Exists(repair))
             {
-                Console.Error.WriteLine("Interop directory was not found: " + repairLayouts);
+                Console.Error.WriteLine("Interop directory was not found: " + repair);
                 return 1;
             }
 
-            return RepairLayouts(repairLayouts);
-        }
-
-        if (!string.IsNullOrWhiteSpace(repairTypeNames))
-        {
-            if (!Directory.Exists(repairTypeNames))
-            {
-                Console.Error.WriteLine("Interop directory was not found: " + repairTypeNames);
-                return 1;
-            }
-
-            return RepairTypeNames(repairTypeNames);
+            return Repair(repair);
         }
 
         if (positional.Count < 2 || string.IsNullOrWhiteSpace(positional[0]) || string.IsNullOrWhiteSpace(positional[1]))
         {
             Console.Error.WriteLine("Usage: Mystia.InteropGen <game-project-dir> <game-install-dir> [output-dir] [unity-libs-dir] [--managed <dir>] [--output <dir>] [--symbols-backup] [--allow-stripped-backup] [--passthrough]");
-            Console.Error.WriteLine("       Mystia.InteropGen --repair-layouts <interop-dir>");
-            Console.Error.WriteLine("       Mystia.InteropGen --repair-type-names <interop-dir>");
+            Console.Error.WriteLine("       Mystia.InteropGen --repair <interop-dir>");
             Console.Error.WriteLine("The project directory must contain a Build folder holding a Managed backup, such as");
             Console.Error.WriteLine("Build\\Symbols\\...\\Managed or Build\\<game>_BackUpThisFolder_ButDontShipItWithYourGame\\Managed.");
             Console.Error.WriteLine("The install directory must contain GameAssembly.dll and global-metadata.dat.");
@@ -99,10 +83,9 @@ public static class Program
             Console.Error.WriteLine("--symbols-backup requires the chosen backup to live under a Symbols folder.");
             Console.Error.WriteLine("--allow-stripped-backup accepts a backup with no Symbols sibling, which may leave members out.");
             Console.Error.WriteLine("--passthrough keeps the source names verbatim, which no C# source can reference.");
-            Console.Error.WriteLine("--repair-layouts lays out the value types of interop that was generated before this tool did");
-            Console.Error.WriteLine("it, in place, and touches nothing else.");
-            Console.Error.WriteLine("--repair-type-names rewrites the type name calls a pointer parameter makes uncompileable, in");
-            Console.Error.WriteLine("place, and touches nothing else.");
+            Console.Error.WriteLine("--repair applies the repairs this tool does after generating - value type layouts, type name");
+            Console.Error.WriteLine("calls, pointer conversions, params array defaults and value type constraints - to interop that");
+            Console.Error.WriteLine("was generated before them, in place, and touches nothing else.");
             return 1;
         }
 
@@ -167,23 +150,13 @@ public static class Program
             .AddInteropAssemblyGenerator()
             .Run();
 
-        // Il2CppInterop only copies field offsets out of the input, so the generated value types have to be
-        // laid out before anything runs against them. See FieldLayoutPass.
-        // It also renders a pointer parameter's type name through a generic method that cannot be
-        // instantiated, which makes the constructor that holds it uncompileable. See TypeNameCallPass.
+        // Il2CppInterop leaves several shapes in the generated code that the CLR will not accept: value types
+        // with no layout, type names rendered through a generic method that cannot be instantiated, pointer
+        // parameters converted with a constructor that no longer exists, params array defaults built as the
+        // wrong array, and value type constraints that landed on the generated mirror. Each is explained on
+        // its own pass; none of them is something the input could have prevented.
         var assemblies = ReadInterop(output, out var paths);
-        var report = FieldLayoutPass.Materialize(assemblies);
-        var typeNames = TypeNameCallPass.Rewrite(assemblies);
-        WriteInterop(assemblies, paths);
-
-        Console.WriteLine($"Layouts: {report.Summary()}");
-        foreach (var name in report.Unresolved.Take(20))
-            Console.WriteLine($"  no size for a field of {name}");
-        foreach (var name in report.Flat.Take(20))
-            Console.WriteLine($"  still at offset 0: {name}");
-        Console.WriteLine($"Type names: {typeNames.Summary()}");
-        foreach (var name in typeNames.Unrecognised.Take(20))
-            Console.WriteLine($"  left alone: {name}");
+        var report = Repair(assemblies);
 
         var manifest = new
         {
@@ -195,12 +168,18 @@ public static class Program
             unityLibsDir = unityLibs,
             passthroughNames = passthroughNames,
             outputDir = output,
-            valueTypesLaidOut = report.Materialized,
-            valueTypesWithoutASize = report.Unresolved,
-            valueTypesWithoutAnOffset = report.Flat,
-            typeNameCallsRewritten = typeNames.Rewritten,
-            typeNameCallsLeftAlone = typeNames.Unrecognised,
+            valueTypesLaidOut = report.Layouts.Materialized,
+            valueTypesWithoutASize = report.Layouts.Unresolved,
+            valueTypesWithoutAnOffset = report.Layouts.Flat,
+            typeNameCallsRewritten = report.TypeNames.Rewritten,
+            typeNameCallsLeftAlone = report.TypeNames.Unrecognised,
+            pointerConversionsRewritten = report.Pointers.Rewritten,
+            paramsArraysMatched = report.ParamsArrays.Rewritten,
+            paramsArraysRemoved = report.ParamsArrays.Dropped,
+            valueTypeConstraintsMoved = report.ValueTypes.Rewritten,
+            comImportFlagsCleared = report.ComImports.Cleared,
         };
+        WriteInterop(assemblies, paths);
         File.WriteAllText(
             Path.Combine(output, "interop-manifest.json"),
             JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
@@ -209,34 +188,58 @@ public static class Program
     }
 
     /// <summary>
-    /// Lays out the value types of every assembly in an interop directory and writes them back, in place.
+    /// Applies every repair to interop that was generated before them, and writes it back in place.
     /// </summary>
-    private static int RepairLayouts(string directory)
+    private static int Repair(string directory)
     {
         var assemblies = ReadInterop(directory, out var paths);
-        var report = FieldLayoutPass.Materialize(assemblies);
+        Repair(assemblies);
         WriteInterop(assemblies, paths);
-        Console.WriteLine($"Layouts: {report.Summary()}");
-        foreach (var name in report.Unresolved.Take(20))
-            Console.WriteLine($"  no size for a field of {name}");
-        foreach (var name in report.Flat.Take(20))
-            Console.WriteLine($"  still at offset 0: {name}");
         return 0;
     }
 
-    /// <summary>
-    /// Rewrites the type name calls of every assembly in an interop directory, in place.
-    /// </summary>
-    private static int RepairTypeNames(string directory)
+    private static InteropRepairReport Repair(List<AssemblyDefinition> assemblies)
     {
-        var assemblies = ReadInterop(directory, out var paths);
-        var report = TypeNameCallPass.Rewrite(assemblies);
-        WriteInterop(assemblies, paths);
-        Console.WriteLine($"Type names: {report.Summary()}");
-        foreach (var name in report.Unrecognised.Take(20))
+        var layouts = FieldLayoutPass.Materialize(assemblies);
+        var typeNames = TypeNameCallPass.Rewrite(assemblies);
+        var pointers = PointerConversionPass.Rewrite(assemblies);
+        var paramsArrays = ParamsArrayDefaultPass.Rewrite(assemblies);
+        var valueTypes = ValueTypeConstraintPass.Rewrite(assemblies);
+        var comImports = ComImportTypePass.Rewrite(assemblies);
+
+        Console.WriteLine($"Layouts: {layouts.Summary()}");
+        foreach (var name in layouts.Unresolved.Take(20))
+            Console.WriteLine($"  no size for a field of {name}");
+        foreach (var name in layouts.Flat.Take(20))
+            Console.WriteLine($"  still at offset 0: {name}");
+        Console.WriteLine($"Type names: {typeNames.Summary()}");
+        foreach (var name in typeNames.Unrecognised.Take(20))
             Console.WriteLine($"  left alone: {name}");
-        return 0;
+        Console.WriteLine($"Pointers: {pointers.Summary()}");
+        foreach (var name in pointers.Unrecognised.Take(20))
+            Console.WriteLine($"  left alone: {name}");
+        Console.WriteLine($"Params arrays: {paramsArrays.Summary()}");
+        foreach (var name in paramsArrays.Dropped.Take(20))
+            Console.WriteLine($"  removed the null default of {name}");
+        foreach (var name in paramsArrays.Unrecognised.Take(20))
+            Console.WriteLine($"  left alone: {name}");
+        Console.WriteLine($"Value types: {valueTypes.Summary()}");
+        foreach (var name in valueTypes.Unrecognised.Take(20))
+            Console.WriteLine($"  left alone: {name}");
+        Console.WriteLine($"Com imports: {comImports.Summary()}");
+        foreach (var name in comImports.Cleared.Take(20))
+            Console.WriteLine($"  cleared: {name}");
+
+        return new InteropRepairReport(layouts, typeNames, pointers, paramsArrays, valueTypes, comImports);
     }
+
+    private sealed record InteropRepairReport(
+        FieldLayoutReport Layouts,
+        TypeNameCallReport TypeNames,
+        PointerConversionReport Pointers,
+        ParamsArrayDefaultReport ParamsArrays,
+        ValueTypeConstraintReport ValueTypes,
+        ComImportTypeReport ComImports);
 
     private static List<AssemblyDefinition> ReadInterop(string directory, out List<string> paths)
     {

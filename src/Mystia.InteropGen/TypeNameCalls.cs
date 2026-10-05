@@ -6,7 +6,7 @@ using AsmResolver.PE.DotNet.Cil;
 namespace Mystia.InteropGen;
 
 /// <summary>
-/// Rewrites the type name calls Il2CppInterop emits for a pointer parameter.
+/// Rewrites the type name calls Il2CppInterop emits for a type the CLR refuses as a generic argument.
 ///
 /// The generator renders a parameter type through <c>IL2CPP.RenderTypeName&lt;T&gt;(bool)</c> and only
 /// unwraps a by-reference type, so a pointer parameter becomes <c>RenderTypeName&lt;System.Byte*&gt;</c>
@@ -17,6 +17,12 @@ namespace Mystia.InteropGen;
 /// fails at its first use: everything that touches one of its static members - string marshalling, the
 /// pointer caches of <c>Il2CppSystem.String</c>, any array of generated objects - throws instead of running,
 /// and a native caller sees only the interop's default value.
+///
+/// The same holds for a by-reference-like type, and one reaches these assemblies: the generator hands
+/// <c>System.TypedReference</c> to the runtime instead of mirroring it
+/// (AssemblyRewriteContext.RewriteTypeRef, the one type on that list), and a byref-like type is not a valid
+/// type argument either. <c>Il2CppSystem.TypedReference</c>, <c>Reflection.FieldInfo</c> and
+/// <c>Reflection.RuntimeFieldInfo</c> lose their constructors to it.
 ///
 /// The rewrite targets the overload the same runtime type already offers for a <c>System.Type</c>:
 /// <c>RenderTypeName(typeof(T*), marker)</c> renders the very same string - the generic overload is one
@@ -124,8 +130,26 @@ internal sealed class TypeNameCallPass
     {
         PointerTypeSignature => "pointer",
         FunctionPointerTypeSignature => "function pointer",
+        _ when IsByReferenceLike(type) => "byref-like",
         _ => null,
     };
+
+    /// <summary>
+    /// Whether the CLR refuses this type as a generic argument because it can only live on the stack: a
+    /// <c>ref struct</c>, either one whose definition carries <c>IsByRefLikeAttribute</c> or one of the three
+    /// the runtime has always treated that way.
+    /// </summary>
+    private static bool IsByReferenceLike(TypeSignature type)
+    {
+        var name = type.FullName;
+        if (name is "System.TypedReference" or "System.ArgIterator" or "System.RuntimeArgumentHandle")
+            return true;
+
+        var definition = (type as TypeDefOrRefSignature)?.Type.Resolve();
+        return definition is not null
+            && definition.CustomAttributes.Any(attribute =>
+                attribute.Constructor?.DeclaringType?.Name?.ToString() == "IsByRefLikeAttribute");
+    }
 }
 
 internal sealed record TypeNameCallReport(int Rewritten, IReadOnlyDictionary<string, int> Kinds, IReadOnlyList<string> Unrecognised)

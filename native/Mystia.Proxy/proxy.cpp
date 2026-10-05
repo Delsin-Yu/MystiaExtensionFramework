@@ -15,6 +15,7 @@
 namespace
 {
 HMODULE g_real = nullptr;
+DWORD g_realError = 0;
 wchar_t g_ownDirectory[MAX_PATH] = {};
 wchar_t g_logPath[MAX_PATH] = {};
 
@@ -98,10 +99,42 @@ bool ReadLauncherDirectory(wchar_t* target)
     return true;
 }
 
+// The activation argument. The proxy is installed once and stays installed, so VERSION.dll is always the one
+// the game loads; only a launch the launcher asked for carries this argument (Steam passes it through
+// `-applaunch <appid> <argument>`, and through steam://run/<appid>//<argument> as well). A player who presses
+// Play in the library never has it, and that launch is the shipped game: no pointer file is read, no log is
+// written, nothing is loaded.
+bool ActivatedByCommandLine()
+{
+    const wchar_t* line = GetCommandLineW();
+    if (line == nullptr)
+        return false;
+
+    constexpr wchar_t token[] = L"--enable-mystia-extension-framework";
+    constexpr size_t length = _countof(token) - 1;
+    for (const wchar_t* at = line; *at != 0; at++)
+    {
+        if (_wcsnicmp(at, token, length) != 0)
+            continue;
+
+        const wchar_t before = at == line ? L' ' : at[-1];
+        const wchar_t after = at[length];
+        const bool leftOk = before == L' ' || before == L'\t' || before == L'"';
+        const bool rightOk = after == L'\0' || after == L' ' || after == L'\t' || after == L'"';
+        if (leftOk && rightOk)
+            return true;
+    }
+
+    return false;
+}
+
 // Loading the bootstrap from a thread keeps the loader lock free while a second managed runtime is
 // brought up. The bootstrap only hooks il2cpp_init, which the player calls long after this.
 DWORD WINAPI StartThread(LPVOID)
 {
+    if (!ActivatedByCommandLine())
+        return 0;
+
     wchar_t launcherDirectory[MAX_PATH] = {};
     if (!ReadLauncherDirectory(launcherDirectory))
         return 0;
@@ -110,6 +143,11 @@ DWORD WINAPI StartThread(LPVOID)
     swprintf_s(g_logPath, L"%s\\proxy.log", launcherDirectory);
     swprintf_s(line, L"launcher directory: %s", launcherDirectory);
     Log(line);
+
+    if (g_real != nullptr)
+        Log(L"the system VERSION.dll is loaded");
+    else
+        LogCode(L"the system VERSION.dll did not load", g_realError);
 
     swprintf_s(line, L"%s\\Mystia.Bootstrap.dll", launcherDirectory);
     const HMODULE bootstrap = LoadLibraryW(line);
@@ -153,11 +191,11 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID)
         return TRUE;
     }
 
+    // Nothing is written here: an ordinary launch must leave no trace at all. The activated path reports this
+    // outcome into the launcher directory instead.
     swprintf_s(path, L"%s\\version.dll", systemDirectory);
     g_real = LoadLibraryExW(path, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-    Log(g_real != nullptr ? L"the system VERSION.dll is loaded" : L"the system VERSION.dll did not load");
-    if (g_real == nullptr)
-        LogCode(L"LoadLibraryExW failed", GetLastError());
+    g_realError = GetLastError();
 
     CreateThread(nullptr, 0, &StartThread, nullptr, 0, nullptr);
     return TRUE;

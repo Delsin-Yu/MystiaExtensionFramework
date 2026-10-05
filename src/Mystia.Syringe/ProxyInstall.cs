@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using Microsoft.Win32;
 
@@ -13,6 +14,33 @@ internal static class ProxyInstall
 {
     public const string InstalledName = "version.dll";
     public const string PointFileName = "Mystia.Proxy.txt";
+
+    // The proxy stays installed for every launch and stays silent unless the game is started with this
+    // argument. Steam passes it through -applaunch <appid> <argument>, which is how the launcher starts the
+    // game; a library launch has no arguments and gets the shipped game.
+    public const string ActivationArgument = "--enable-mystia-extension-framework";
+
+    public static string SteamRunUrl(int appId) => $"steam://run/{appId}//{ActivationArgument}";
+
+    // steam://run/<appid>//<argument> makes the client ask the player to confirm the launch, and that dialog
+    // has to be clicked before the game starts. The client's own command line launches straight away, so the
+    // executable is preferred and the URL stays as the fallback for a machine whose registry has no SteamExe.
+    public static ProcessStartInfo SteamStart(int appId)
+    {
+        var steamExe = SteamExecutable();
+        return steamExe is null
+            ? new ProcessStartInfo(SteamRunUrl(appId)) { UseShellExecute = true }
+            : new ProcessStartInfo(steamExe, $"-applaunch {appId} {ActivationArgument}") { UseShellExecute = false };
+    }
+
+    private static string? SteamExecutable()
+    {
+        if (!OperatingSystem.IsWindows())
+            return null;
+
+        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
+        return key?.GetValue("SteamExe") as string is { Length: > 0 } path && File.Exists(path) ? path : null;
+    }
 
     // The native build output name comes first, so the launcher directory never holds a literal
     // version.dll: a launcher process that imports VERSION.dll would otherwise hijack itself the same

@@ -96,14 +96,15 @@ public static class Program
         Console.WriteLine($"Wrote {ProxyInstall.PointPath(gameDirectory)} naming this launcher directory: {launcherDirectory}");
         Console.WriteLine($"Logs: {Path.Combine(launcherDirectory, "bootstrap.log")}, {Path.Combine(launcherDirectory, "host.log")}, and {Path.Combine(launcherDirectory, "proxy.log")} (the proxy logs to %TEMP%\\Mystia.Proxy.log until it finds this directory).");
 
-        Console.WriteLine($"Starting the game through Steam: steam://run/{config.SteamAppId}");
+        Console.WriteLine($"Starting the game through Steam with {ProxyInstall.ActivationArgument}.");
+        Console.WriteLine("The proxy is inert without that argument: a plain launch from the library runs the shipped game.");
         try
         {
-            Process.Start(new ProcessStartInfo($"steam://run/{config.SteamAppId}") { UseShellExecute = true });
+            Process.Start(ProxyInstall.SteamStart(config.SteamAppId));
         }
         catch (Exception error) when (error is Win32Exception or InvalidOperationException)
         {
-            Console.Error.WriteLine($"Steam did not accept steam://run/{config.SteamAppId}: {error.Message}");
+            Console.Error.WriteLine($"Steam did not start the game: {error.Message}");
             return 1;
         }
 
